@@ -1,0 +1,8 @@
+{
+  "name": "STUDIA AI",
+  "description": "Intelligent AI-powered student learning companion for Android and iOS. Features course summarization, document analysis, quiz generator, flashcards with spaced repetition, personalized study planner, exam simulation, and streak tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
