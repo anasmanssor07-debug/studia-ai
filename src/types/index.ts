@@ -19,7 +19,8 @@ export type StudyField =
   | 'medicine'
   | 'languages'
   | 'law'
-  | 'other';
+  | 'other'
+  | (string & {});
 
 export type SubscriptionTier = 'free_trial' | 'free_expired' | 'premium' | 'gold';
 

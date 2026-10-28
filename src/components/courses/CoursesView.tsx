@@ -78,6 +78,13 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
     loadCourses();
   }, [initialCourseId]);
 
+  useEffect(() => {
+    if (openPdfModalTrigger) {
+      setSelectedCourse(null);
+      setShowPdfModal(true);
+    }
+  }, [openPdfModalTrigger]);
+
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle) return;
@@ -334,6 +341,16 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
             </div>
           </div>
         )}
+
+        {/* Modal: Upload PDF Course with Strict AI Summary */}
+        <PdfCourseUploadModal
+          isOpen={showPdfModal}
+          onClose={() => setShowPdfModal(false)}
+          onCourseCreated={(c) => {
+            setCourses([c, ...courses]);
+            setSelectedCourse(c);
+          }}
+        />
       </div>
     );
   }

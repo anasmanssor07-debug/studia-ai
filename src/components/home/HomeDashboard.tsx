@@ -307,45 +307,68 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ onNavigate }) => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 gap-3">
-          {courses.slice(0, 2).map((course) => (
-            <div
-              key={course.id}
-              onClick={() => onNavigate('courses', { courseId: course.id })}
-              className="p-4 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-slate-200 transition-all cursor-pointer flex items-center justify-between gap-3"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 font-bold text-xs"
-                  style={{ backgroundColor: course.color }}
-                >
-                  {course.title.slice(0, 2).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <h4 className="text-xs font-extrabold text-slate-900 truncate">
-                    {course.title}
-                  </h4>
-                  <p className="text-[11px] text-slate-500 truncate">
-                    {course.chapters.length} chapitres · {course.documents.length} document{course.documents.length > 1 ? 's' : ''}
-                  </p>
-                  
-                  {/* Micro Progress bar */}
-                  <div className="w-36 h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
-                    <div
-                      className="h-full bg-blue-600 rounded-full"
-                      style={{ width: `${course.progressPercent}%` }}
-                    />
+        {courses.length === 0 ? (
+          <div 
+            onClick={() => onNavigate('courses', { openPdfModal: true })}
+            className="p-5 bg-white rounded-2xl border-2 border-dashed border-blue-200 hover:border-blue-500 shadow-2xs cursor-pointer text-center space-y-2.5 group transition-all"
+          >
+            <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto group-hover:scale-105 transition-transform">
+              <FileUp className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-slate-900">Aucun cours ajouté pour le moment</h4>
+              <p className="text-[11px] text-slate-500 mt-0.5 max-w-sm mx-auto">
+                Cliquez pour importer votre premier support PDF. STUDIA AI reconnaîtra automatiquement le module de ce cours et générera votre synthèse.
+              </p>
+            </div>
+            <div className="pt-1">
+              <span className="py-2 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-sm shadow-blue-500/20 inline-flex items-center gap-1.5">
+                <Upload className="w-3.5 h-3.5" />
+                <span>Importer un PDF</span>
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3">
+            {courses.slice(0, 2).map((course) => (
+              <div
+                key={course.id}
+                onClick={() => onNavigate('courses', { courseId: course.id })}
+                className="p-4 bg-white rounded-2xl border border-slate-100 shadow-xs hover:border-slate-200 transition-all cursor-pointer flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 font-bold text-xs"
+                    style={{ backgroundColor: course.color }}
+                  >
+                    {course.title.slice(0, 2).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className="text-xs font-extrabold text-slate-900 truncate">
+                      {course.title}
+                    </h4>
+                    <p className="text-[11px] text-slate-500 truncate">
+                      {course.chapters.length} chapitres · {course.documents.length} document{course.documents.length > 1 ? 's' : ''}
+                    </p>
+                    
+                    {/* Micro Progress bar */}
+                    <div className="w-36 h-1.5 bg-slate-100 rounded-full mt-2 overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 rounded-full"
+                        style={{ width: `${course.progressPercent}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <span className="text-xs font-bold text-slate-600">{course.progressPercent}%</span>
-                <ChevronRight className="w-4 h-4 text-slate-400" />
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-xs font-bold text-slate-600">{course.progressPercent}%</span>
+                  <ChevronRight className="w-4 h-4 text-slate-400" />
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* 5. AI Assistant Quick Card */}
