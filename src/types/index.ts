@@ -22,17 +22,71 @@ export type StudyField =
   | 'other'
   | (string & {});
 
+export type SubscriptionStatus = 
+  | 'inactive' 
+  | 'pending_payment' 
+  | 'active' 
+  | 'payment_failed' 
+  | 'cancelled' 
+  | 'expired';
+
 export type SubscriptionTier = 'free_trial' | 'free_expired' | 'premium' | 'gold';
+
+export interface PaymentTransaction {
+  id: string;
+  orderId: string;
+  userId: string;
+  userEmail: string;
+  amountMAD: number;
+  currency: string;
+  paymentMethod: string;
+  cardBrand?: string;
+  last4?: string;
+  status: 'success' | 'failed' | 'pending';
+  transactionRef: string;
+  authCode?: string;
+  failureReason?: string;
+  createdAt: string;
+  description: string;
+}
 
 export interface UserSubscription {
   tier: SubscriptionTier;
+  status: SubscriptionStatus;
+  planId?: 'premium' | 'free_trial' | 'gold';
   trialStartedAt?: string;
   trialExpiresAt?: string;
   isTrialActive: boolean;
+  startDate?: string;
+  currentPeriodEnd?: string;
+  nextBillingDate?: string;
   premiumExpiresAt?: string;
   autoRenew: boolean;
+  cancelAtPeriodEnd?: boolean;
   planName: string;
   priceMAD: number;
+  lastPaymentId?: string;
+}
+
+export interface AdminMetrics {
+  totalUsers: number;
+  activeSubscribers: number;
+  pendingPayments: number;
+  expiredSubscribers: number;
+  cancelledSubscribers: number;
+  totalRevenueMAD: number;
+  failedTransactionsCount: number;
+  transactions: PaymentTransaction[];
+}
+
+export interface AdminConfig {
+  premiumPriceMAD: number;
+  billingCycleDays: number;
+  allowTrial: boolean;
+  trialHours: number;
+  aiDailyLimit: number;
+  summaryLimit: number;
+  quizLimit: number;
 }
 
 export interface UserProfile {

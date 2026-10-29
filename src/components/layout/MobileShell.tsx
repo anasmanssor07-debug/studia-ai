@@ -27,6 +27,7 @@ import { ProfileView } from '../profile/ProfileView.tsx';
 import { CelebrationModal } from '../celebration/CelebrationModal.tsx';
 import { SubscriptionModal } from '../subscription/SubscriptionModal.tsx';
 import { AvatarPickerModal } from '../profile/AvatarPickerModal.tsx';
+import { AdminDashboardView } from '../admin/AdminDashboardView.tsx';
 
 export type ScreenFormatMode = 'adaptive' | 'phone' | 'fullscreen';
 
@@ -135,6 +136,21 @@ export const MobileShell: React.FC = () => {
 
           <div className="h-4 w-px bg-slate-800 mx-1" />
 
+          {/* Admin Dashboard Quick Link */}
+          <button
+            onClick={() => handleNavigate('admin')}
+            title="Panneau d'administration & supervision Payzone"
+            className={`flex items-center gap-1 py-1 px-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              activeTab === 'admin'
+                ? 'bg-purple-600 text-white'
+                : 'text-purple-300 hover:text-white bg-purple-950/60 border border-purple-800/60'
+            }`}
+          >
+            <span>Admin</span>
+          </button>
+
+          <div className="h-4 w-px bg-slate-800 mx-1" />
+
           {/* Language Switcher */}
           <button
             onClick={() => {
@@ -197,14 +213,18 @@ export const MobileShell: React.FC = () => {
               <span>{user?.streakDays || 0} j</span>
             </div>
 
-            {/* Subscription Pill */}
+            {/* Subscription Pill with discrete PREMIUM badge */}
             <button
               onClick={() => setShowSubscriptionModal(true)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-blue-50 text-blue-700 text-xs font-bold border border-blue-200/80 hover:bg-blue-100 transition-colors"
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+                user?.subscription?.status === 'active'
+                  ? 'bg-gradient-to-r from-amber-500/15 to-yellow-500/15 text-amber-800 border-amber-300 hover:bg-amber-100/60 shadow-2xs'
+                  : 'bg-blue-50 text-blue-700 border-blue-200/80 hover:bg-blue-100'
+              }`}
             >
-              <Crown className="w-3.5 h-3.5 text-blue-600" />
-              <span className="capitalize">
-                {user?.subscription?.tier === 'premium' ? 'Premium' : user?.subscription?.tier === 'gold' ? 'Gold' : '48h'}
+              <Crown className={`w-3.5 h-3.5 ${user?.subscription?.status === 'active' ? 'text-amber-500 fill-amber-500' : 'text-blue-600'}`} />
+              <span>
+                {user?.subscription?.status === 'active' ? 'PREMIUM' : user?.subscription?.status === 'cancelled' ? 'Résilié' : '40 DH / m'}
               </span>
             </button>
 
@@ -270,6 +290,7 @@ export const MobileShell: React.FC = () => {
           )}
           {activeTab === 'planner' && <PlannerAndExamsView />}
           {activeTab === 'profile' && <ProfileView />}
+          {activeTab === 'admin' && <AdminDashboardView />}
         </main>
 
         {/* Sticky Bottom Navigation Bar */}
