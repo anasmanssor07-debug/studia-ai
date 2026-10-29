@@ -2,9 +2,54 @@
  * Fast client-side PDF text extractor.
  * Extracts textual content from PDF files directly in the browser
  * using lightweight binary stream analysis and native DecompressionStream.
- * This eliminates the need to transmit tens of megabytes of raw base64 data,
- * dramatically accelerating analysis speed from ~20s to <2s.
+ * Handles trailing PDF stream padding safely without "Junk found after end of compressed data" errors.
  */
+
+async function safeDecompressChunk(rawChunk: Uint8Array): Promise<string> {
+  if (typeof DecompressionStream === 'undefined' || rawChunk.length < 4) {
+    return '';
+  }
+
+  // Trim leading \r, \n, spaces
+  let start = 0;
+  while (start < rawChunk.length && (rawChunk[start] === 0x0A || rawChunk[start] === 0x0D || rawChunk[start] === 0x20)) {
+    start++;
+  }
+
+  // Trim trailing \r, \n, spaces
+  let end = rawChunk.length;
+  while (end > start && (rawChunk[end - 1] === 0x0A || rawChunk[end - 1] === 0x0D || rawChunk[end - 1] === 0x20)) {
+    end--;
+  }
+
+  if (end <= start + 4) return '';
+  const cleanChunk = rawChunk.subarray(start, end);
+
+  // Helper using Response & pipeThrough which cleanly catches stream errors without unhandled rejections
+  const tryFormat = async (format: 'deflate' | 'deflate-raw'): Promise<string> => {
+    try {
+      const ds = new DecompressionStream(format);
+      const stream = new Blob([cleanChunk as any]).stream();
+      if (!stream) return '';
+      
+      const decompressedStream = stream.pipeThrough(ds);
+      const response = new Response(decompressedStream);
+      const buffer = await response.arrayBuffer();
+      return new TextDecoder('utf-8', { fatal: false }).decode(buffer);
+    } catch {
+      // Catch any decompression errors (e.g. junk after compressed data, bad zlib headers)
+      return '';
+    }
+  };
+
+  // Try zlib deflate first, then raw deflate
+  let decoded = await tryFormat('deflate');
+  if (!decoded) {
+    decoded = await tryFormat('deflate-raw');
+  }
+
+  return decoded;
+}
 
 export async function extractTextFromPdfFile(file: File): Promise<{ text: string; pageCountEstimate: number }> {
   try {
@@ -24,7 +69,6 @@ export async function extractTextFromPdfFile(file: File): Promise<{ text: string
 
     while ((match = btRegex.exec(latin1Text)) !== null) {
       const block = match[1];
-      // Match (text) Tj and [(t1)(t2)] TJ patterns
       const textMatches = block.match(/\((.*?)\)\s*T[jJ]|\[(.*?)\]\s*TJ/g);
       if (textMatches) {
         for (const tm of textMatches) {
@@ -41,78 +85,68 @@ export async function extractTextFromPdfFile(file: File): Promise<{ text: string
       }
     }
 
-    // 2. If direct extraction found substantial text, return it
     let combined = extractedChunks.join(' ');
-    if (combined.length > 200) {
-      // Clean up whitespace
+    if (combined.length > 300) {
       combined = combined.replace(/\s+/g, ' ').slice(0, 45000);
       return { text: combined, pageCountEstimate };
     }
 
-    // 3. Extract text from FlateDecode streams if DecompressionStream is supported
+    // 2. Safe decompression of FlateDecode streams
     if (typeof DecompressionStream !== 'undefined') {
       const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
       let streamMatch: RegExpExecArray | null;
       let decompressedText = '';
-
       let streamsChecked = 0;
+
       while ((streamMatch = streamRegex.exec(latin1Text)) !== null && streamsChecked < 25) {
         streamsChecked++;
-        const streamStart = streamMatch.index + streamMatch[0].indexOf('\n') + 1;
-        const streamEnd = streamMatch.index + streamMatch[0].lastIndexOf('endstream');
+        const streamKeywordPos = streamMatch.index;
         
+        // Check for explicit /Length in the stream dictionary before "stream"
+        const preStream = latin1Text.slice(Math.max(0, streamKeywordPos - 250), streamKeywordPos);
+        const lenMatch = preStream.match(/\/Length\s+(\d+)\b/);
+
+        let streamStart = streamKeywordPos + streamMatch[0].indexOf('\n') + 1;
+        let streamEnd = streamKeywordPos + streamMatch[0].lastIndexOf('endstream');
+
+        if (lenMatch) {
+          const explicitLength = parseInt(lenMatch[1], 10);
+          if (explicitLength > 0 && streamStart + explicitLength <= bytes.length) {
+            streamEnd = streamStart + explicitLength;
+          }
+        }
+
         if (streamEnd > streamStart) {
           try {
             const rawChunk = bytes.subarray(streamStart, streamEnd);
-            // Check for zlib header (0x78)
-            const ds = new DecompressionStream('deflate');
-            const writer = ds.writable.getWriter();
-            writer.write(rawChunk);
-            writer.close();
+            const decoded = await safeDecompressChunk(rawChunk);
 
-            const reader = ds.readable.getReader();
-            const outChunks: Uint8Array[] = [];
-            while (true) {
-              const { value, done } = await reader.read();
-              if (done) break;
-              if (value) outChunks.push(value);
-            }
-
-            const totalLen = outChunks.reduce((acc, c) => acc + c.length, 0);
-            const merged = new Uint8Array(totalLen);
-            let offset = 0;
-            for (const c of outChunks) {
-              merged.set(c, offset);
-              offset += c.length;
-            }
-
-            const decoded = new TextDecoder('utf-8', { fatal: false }).decode(merged);
-            
-            // Extract Tj / TJ from decoded stream
-            const streamBtRegex = /BT\s*([\s\S]*?)\s*ET/g;
-            let sm: RegExpExecArray | null;
-            while ((sm = streamBtRegex.exec(decoded)) !== null) {
-              const textMatches = sm[1].match(/\((.*?)\)\s*T[jJ]|\[(.*?)\]\s*TJ/g);
-              if (textMatches) {
-                for (const tm of textMatches) {
-                  const cleaned = tm
-                    .replace(/^\s*\[?\(?|\)?\s*T[jJ]\]?\s*$/g, '')
-                    .replace(/\\([()\\])/g, '$1');
-                  if (cleaned.trim().length > 1) {
-                    decompressedText += ' ' + cleaned.trim();
+            if (decoded) {
+              const streamBtRegex = /BT\s*([\s\S]*?)\s*ET/g;
+              let sm: RegExpExecArray | null;
+              while ((sm = streamBtRegex.exec(decoded)) !== null) {
+                const textMatches = sm[1].match(/\((.*?)\)\s*T[jJ]|\[(.*?)\]\s*TJ/g);
+                if (textMatches) {
+                  for (const tm of textMatches) {
+                    const cleaned = tm
+                      .replace(/^\s*\[?\(?|\)?\s*T[jJ]\]?\s*$/g, '')
+                      .replace(/\\([()\\])/g, '$1');
+                    if (cleaned.trim().length > 1) {
+                      decompressedText += ' ' + cleaned.trim();
+                    }
                   }
                 }
               }
             }
           } catch {
-            // Ignore decompression errors on non-deflate / encrypted streams
+            // Silently skip any individual stream that fails decompression
           }
         }
 
         if (decompressedText.length > 30000) break;
       }
 
-      if (decompressedText.trim().length > 200) {
+      if (decompressedText.trim().length > 150) {
         return {
           text: decompressedText.replace(/\s+/g, ' ').slice(0, 45000),
           pageCountEstimate,

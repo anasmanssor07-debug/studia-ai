@@ -108,9 +108,14 @@ export const PdfCourseUploadModal: React.FC<PdfCourseUploadModalProps> = ({
       // 1. Extract text if not already done
       let text = extractedText;
       if (!text) {
-        const extracted = await extractTextFromPdfFile(file);
-        text = extracted.text;
-        setExtractedText(text);
+        try {
+          const extracted = await extractTextFromPdfFile(file);
+          text = extracted.text;
+          setExtractedText(text);
+        } catch (extErr) {
+          console.warn('Text pre-extraction failed, using binary upload:', extErr);
+          text = '';
+        }
       }
 
       setProgressPercent(50);
