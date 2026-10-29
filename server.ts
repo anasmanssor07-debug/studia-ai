@@ -510,8 +510,8 @@ Format JSON attendu impérativement :
 {
   "detectedModule": "Nom exact du module universitaire",
   "detectedTitle": "Titre exact du cours ou chapitre",
-  "summary": "Grand résumé détaillé et structuré en plusieurs paragraphes complets expliquant l'intégralité des notions, démarches et concepts du document",
-  "detailedSummary": "Développement exhaustif et approfondi section par section de l'ensemble du cours",
+  "summary": "Résumé sous forme de texte riche structuré avec des titres de sections clairs (## 1. Vue d'Ensemble & Cadre, ## 2. Définitions Fondamentales du Support, ## 3. Propriétés, Formules & Théorèmes Clés, ## 4. Analyse des Chapitres, ## 5. Astuces d'Examen) détaillant exhaustivement chaque notion et définition du document sans rien omettre",
+  "detailedSummary": "Texte intégral structuré avec titres et sous-titres couvrant l'ensemble du polycopié",
   "chapters": [
     {
       "title": "Titre du chapitre ou partie selon le PDF",
@@ -802,23 +802,23 @@ app.post('/api/ai/summarize', async (req, res) => {
   }
 
   try {
-    const prompt = `Génère une fiche de révision complète et synthétique pour ce cours.
+    const prompt = `Génère une fiche de révision complète et approfondie pour ce cours sous forme de texte riche avec des titres de sections et des définitions précises.
 Matière / Cours : ${courseTitle || 'Matière universitaire'}
 ${chapterTitle ? `Chapitre visé : ${chapterTitle}` : ''}
 Langue : ${language}
 
 Contenu de référence :
 """
-${textToSummarize.slice(0, 15000)}
+${textToSummarize.slice(0, 20000)}
 """
 
 Formate le résultat en JSON avec la structure exacte suivante :
 {
-  "title": "Titre synthétique de la fiche",
-  "summary": "Résumé global en 2-3 paragraphes clairs et percutants",
+  "title": "Titre officiel de la fiche de révision",
+  "summary": "Résumé sous forme de texte riche structuré avec des titres de sections (## 1. Vue d'Ensemble, ## 2. Définitions Fondamentales du Support, ## 3. Formules & Théorèmes Clés, ## 4. Analyse des Chapitres, ## 5. Astuces d'Examen) détaillant exhaustivement chaque notion et définition du document sans rien omettre",
   "keyConcepts": ["Concept 1 avec définition courte", "Concept 2", "Concept 3"],
-  "definitions": [{"term": "Terme 1", "definition": "Définition précise"}],
-  "formulasOrTheorems": ["Formule ou théorème important avec explication des variables"],
+  "definitions": [{"term": "Terme figurant dans le document", "definition": "Définition complète et rigoureuse issue du texte"}],
+  "formulasOrTheorems": ["Formule, théorème ou loi avec explication des hypothèses et variables"],
   "examTips": ["Piège classique à éviter à l'examen", "Conseil de révision"],
   "recommendedNextStep": "Recommandation concrète pour la suite"
 }`;

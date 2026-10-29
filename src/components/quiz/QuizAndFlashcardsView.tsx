@@ -246,6 +246,23 @@ export const QuizAndFlashcardsView: React.FC<QuizAndFlashcardsViewProps> = ({
             </button>
           </div>
 
+          {courses.length > 0 && (
+            <div className="flex items-center gap-2 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80">
+              <span className="text-[11px] font-bold text-slate-600 shrink-0">Support cible :</span>
+              <select
+                value={selectedCourseId}
+                onChange={(e) => setSelectedCourseId(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl py-1.5 px-2.5 text-xs text-slate-800 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              >
+                {courses.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title} ({c.subject})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {flashcards.length === 0 ? (
             <div className="p-8 bg-white rounded-3xl border border-slate-100 text-center space-y-3">
               <Layers className="w-12 h-12 text-blue-400 mx-auto opacity-70" />

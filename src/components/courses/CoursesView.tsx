@@ -27,6 +27,83 @@ interface CoursesViewProps {
   onNavigate: (tab: string, extra?: any) => void;
 }
 
+const FormattedSummaryViewer: React.FC<{ text: string }> = ({ text }) => {
+  if (!text) return null;
+  const lines = text.split('\n');
+
+  return (
+    <div className="space-y-2 text-xs leading-relaxed text-slate-700 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+      {lines.map((line, idx) => {
+        const trimmed = line.trim();
+        if (!trimmed) {
+          return <div key={idx} className="h-1" />;
+        }
+
+        // Section header ##
+        if (trimmed.startsWith('## ')) {
+          const title = trimmed.replace(/^##\s+/, '');
+          return (
+            <div key={idx} className="pt-3 pb-1 border-b border-slate-200/80 mb-1.5 first:pt-0">
+              <h3 className="text-xs font-black uppercase tracking-wider text-blue-700 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-600" />
+                <span>{title}</span>
+              </h3>
+            </div>
+          );
+        }
+
+        // Subheader ###
+        if (trimmed.startsWith('### ')) {
+          const title = trimmed.replace(/^###\s+/, '');
+          return (
+            <h4 key={idx} className="text-xs font-bold text-slate-900 pt-2 pb-0.5 flex items-center gap-1.5">
+              <span className="text-blue-500 font-bold">▸</span>
+              <span>{title}</span>
+            </h4>
+          );
+        }
+
+        // Warning / Tip
+        if (trimmed.startsWith('⚠️')) {
+          return (
+            <div key={idx} className="p-2.5 bg-amber-50 border border-amber-200/60 rounded-xl text-amber-950 font-medium text-[11px] flex items-start gap-2 my-1">
+              <span className="shrink-0 text-amber-600 font-bold">⚠️</span>
+              <span>{trimmed.replace(/^⚠️\s*/, '')}</span>
+            </div>
+          );
+        }
+
+        // Bullet point with bold term / definition
+        if (trimmed.startsWith('•') || trimmed.startsWith('-')) {
+          const content = trimmed.replace(/^[•\-]\s*/, '');
+          const boldMatch = content.match(/^\*\*(.*?)\*\*\s*[:\-–]\s*(.*)/);
+          if (boldMatch) {
+            return (
+              <div key={idx} className="p-2.5 bg-white border border-purple-100/80 rounded-xl my-1 shadow-2xs">
+                <span className="font-extrabold text-purple-950">{boldMatch[1]} : </span>
+                <span className="text-slate-700">{boldMatch[2]}</span>
+              </div>
+            );
+          }
+          return (
+            <div key={idx} className="flex items-start gap-2 pl-2">
+              <span className="text-blue-600 font-bold shrink-0">•</span>
+              <span>{content}</span>
+            </div>
+          );
+        }
+
+        // Regular paragraph text
+        return (
+          <p key={idx} className="text-slate-600 font-normal">
+            {trimmed}
+          </p>
+        );
+      })}
+    </div>
+  );
+};
+
 export const CoursesView: React.FC<CoursesViewProps> = ({ 
   initialCourseId, 
   openPdfModalTrigger, 
@@ -651,8 +728,8 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
                     100% extrait du PDF
                   </span>
                 </div>
-                <div className="text-xs text-slate-700 mt-2.5 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100 whitespace-pre-line font-normal">
-                  {summaryData.summary}
+                <div className="mt-3">
+                  <FormattedSummaryViewer text={summaryData.summary} />
                 </div>
               </div>
 
