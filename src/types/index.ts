@@ -62,7 +62,11 @@ export interface CourseDocument {
   fileSize: string;
   content: string;
   summary?: string;
+  detailedSummary?: string;
   keyConcepts?: string[];
+  definitions?: Array<{ term: string; definition: string }>;
+  formulasOrTheorems?: string[];
+  examTips?: string[];
   createdAt: string;
 }
 
@@ -71,6 +75,7 @@ export interface Chapter {
   title: string;
   order: number;
   summary?: string;
+  keyPoints?: string[];
   completed: boolean;
 }
 

@@ -482,6 +482,7 @@ export const api = {
     xpEarned: number;
     newLevel: number;
     streakDays: number;
+    todayStudyMinutes?: number;
     unlockedAchievement?: Achievement | null;
   }> {
     if (isStaticDeployment) return localClientStorage.logStudySession(minutes, courseId);
@@ -514,6 +515,7 @@ export const api = {
   },
 
   async getAnalyticsSummary(): Promise<{
+    todayStudyMinutes: number;
     totalStudyMinutes: number;
     completedSessionsCount: number;
     completedQuizzesCount: number;

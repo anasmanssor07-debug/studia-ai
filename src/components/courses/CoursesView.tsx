@@ -85,6 +85,24 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
     }
   }, [openPdfModalTrigger]);
 
+  useEffect(() => {
+    if (selectedCourse?.documents && selectedCourse.documents.length > 0) {
+      const doc = selectedCourse.documents[0];
+      if (doc.summary || doc.detailedSummary) {
+        setSummaryData({
+          title: `Fiche de révision : ${selectedCourse.title}`,
+          summary: doc.detailedSummary || doc.summary,
+          keyConcepts: doc.keyConcepts || [],
+          definitions: doc.definitions || [],
+          formulasOrTheorems: doc.formulasOrTheorems || [],
+          examTips: doc.examTips || [],
+        });
+      }
+    } else {
+      setSummaryData(null);
+    }
+  }, [selectedCourse]);
+
   const handleCreateCourse = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTitle) return;
@@ -468,15 +486,24 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               {selectedCourse.chapters.map((ch, idx) => (
                 <div
                   key={ch.id}
-                  className="p-3.5 bg-white rounded-2xl border border-slate-100 shadow-2xs flex items-start justify-between gap-3"
+                  className="p-4 bg-white rounded-2xl border border-slate-100 shadow-2xs flex items-start justify-between gap-3"
                 >
-                  <div className="flex items-start gap-3">
-                    <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-700 font-bold text-xs flex items-center justify-center shrink-0">
+                  <div className="flex items-start gap-3 min-w-0">
+                    <span className="w-7 h-7 rounded-xl bg-blue-50 text-blue-700 font-extrabold text-xs flex items-center justify-center shrink-0 border border-blue-100">
                       {idx + 1}
                     </span>
-                    <div>
+                    <div className="min-w-0">
                       <h4 className="text-xs font-bold text-slate-900">{ch.title}</h4>
-                      {ch.summary && <p className="text-[11px] text-slate-500 mt-0.5">{ch.summary}</p>}
+                      {ch.summary && <p className="text-[11px] text-slate-600 mt-1 leading-relaxed">{ch.summary}</p>}
+                      {ch.keyPoints && ch.keyPoints.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {ch.keyPoints.map((pt, pIdx) => (
+                            <span key={pIdx} className="text-[10px] bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md font-medium">
+                              • {pt}
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -618,20 +645,47 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
           {summaryData && !generatingSummary && (
             <div className="p-5 bg-white rounded-3xl border border-slate-100 shadow-2xs space-y-4">
               <div>
-                <h2 className="text-sm font-black text-slate-900">{summaryData.title}</h2>
-                <p className="text-xs text-slate-600 mt-2 leading-relaxed bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-sm font-black text-slate-900">{summaryData.title || selectedCourse.title}</h2>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    100% extrait du PDF
+                  </span>
+                </div>
+                <div className="text-xs text-slate-700 mt-2.5 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100 whitespace-pre-line font-normal">
                   {summaryData.summary}
-                </p>
+                </div>
               </div>
 
+              {/* Definitions Section */}
+              {summaryData.definitions && summaryData.definitions.length > 0 && (
+                <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-2xl space-y-2">
+                  <h4 className="text-xs font-bold text-purple-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <BookOpen className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Définitions Rigoureuses du Support</span>
+                  </h4>
+                  <div className="space-y-1.5">
+                    {summaryData.definitions.map((def: any, i: number) => {
+                      const term = typeof def === 'string' ? def : def.term;
+                      const definition = typeof def === 'string' ? '' : def.definition;
+                      return (
+                        <div key={i} className="bg-white p-2.5 rounded-xl border border-purple-100/80 text-xs">
+                          <span className="font-extrabold text-purple-950">{term} : </span>
+                          <span className="text-slate-700">{definition}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Key Concepts */}
-              {summaryData.keyConcepts && (
-                <div>
-                  <h4 className="text-xs font-bold text-slate-800 mb-1.5 uppercase tracking-wider">Concepts Majeurs</h4>
-                  <div className="space-y-1">
+              {summaryData.keyConcepts && summaryData.keyConcepts.length > 0 && (
+                <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl">
+                  <h4 className="text-xs font-bold text-slate-800 mb-2 uppercase tracking-wider">Concepts Majeurs du Document</h4>
+                  <div className="space-y-1.5">
                     {summaryData.keyConcepts.map((item: string, i: number) => (
                       <div key={i} className="text-xs text-slate-700 flex items-start gap-2">
-                        <span className="text-blue-600 font-bold">•</span>
+                        <span className="text-blue-600 font-bold shrink-0">•</span>
                         <span>{item}</span>
                       </div>
                     ))}
@@ -641,11 +695,11 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
 
               {/* Formulas or Theorems */}
               {summaryData.formulasOrTheorems && summaryData.formulasOrTheorems.length > 0 && (
-                <div className="p-3 bg-blue-50 border border-blue-100 rounded-2xl">
-                  <h4 className="text-xs font-bold text-blue-900 mb-1.5 uppercase tracking-wider">Formules & Théorèmes Clés</h4>
-                  <div className="space-y-1 text-xs text-blue-950 font-mono">
+                <div className="p-4 bg-blue-50/80 border border-blue-100 rounded-2xl">
+                  <h4 className="text-xs font-bold text-blue-900 mb-2 uppercase tracking-wider">Formules, Lois & Théorèmes Clés</h4>
+                  <div className="space-y-1.5 text-xs text-blue-950 font-mono">
                     {summaryData.formulasOrTheorems.map((f: string, i: number) => (
-                      <div key={i} className="bg-white/70 p-2 rounded-lg border border-blue-200/60">
+                      <div key={i} className="bg-white/80 p-2.5 rounded-xl border border-blue-200/60 leading-relaxed">
                         {f}
                       </div>
                     ))}
@@ -654,13 +708,13 @@ export const CoursesView: React.FC<CoursesViewProps> = ({
               )}
 
               {/* Exam Tips */}
-              {summaryData.examTips && (
-                <div className="p-3 bg-amber-50 border border-amber-100 rounded-2xl">
-                  <h4 className="text-xs font-bold text-amber-900 mb-1 uppercase tracking-wider">Astuces & Pièges d'Examen</h4>
-                  <div className="space-y-1 text-xs text-amber-950">
+              {summaryData.examTips && summaryData.examTips.length > 0 && (
+                <div className="p-4 bg-amber-50/80 border border-amber-100 rounded-2xl">
+                  <h4 className="text-xs font-bold text-amber-900 mb-2 uppercase tracking-wider">Astuces & Pièges d'Examen Fréquents</h4>
+                  <div className="space-y-1.5 text-xs text-amber-950">
                     {summaryData.examTips.map((tip: string, i: number) => (
-                      <div key={i} className="flex items-start gap-1.5">
-                        <span className="text-amber-600 font-bold">⚠️</span>
+                      <div key={i} className="flex items-start gap-2 bg-white/70 p-2 rounded-xl border border-amber-200/50">
+                        <span className="text-amber-600 font-bold shrink-0">⚠️</span>
                         <span>{tip}</span>
                       </div>
                     ))}

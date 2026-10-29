@@ -32,8 +32,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ onNavigate }) => {
     user, 
     isStudying, 
     studyDurationSec, 
+    todayStudyMinutes,
     startStudySession, 
     finishStudySession,
+    addStudyMinutes,
     setShowSubscriptionModal 
   } = useAuth();
   const { t, language } = useLanguage();
@@ -86,10 +88,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ onNavigate }) => {
   };
 
   const dailyGoalMinutes = user?.dailyGoalMinutes || 45;
-  const loggedMinutes = 0; // Starts at 0, counts from completed sessions
-  const currentTotalMinutes = isStudying 
-    ? loggedMinutes + Math.floor(studyDurationSec / 60) 
-    : loggedMinutes;
+  // Accurately counts every minute studied today + live timer progression
+  const currentTotalMinutes = todayStudyMinutes + (isStudying ? Math.floor(studyDurationSec / 60) : 0);
   const progressPercent = Math.min(100, Math.round((currentTotalMinutes / dailyGoalMinutes) * 100));
 
   // Circular progress math
@@ -200,29 +200,48 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ onNavigate }) => {
           </div>
         </div>
 
-        {/* Live Timer Trigger */}
-        <div className="shrink-0 flex flex-col items-end">
+        {/* Live Timer Trigger & Quick Add Buttons */}
+        <div className="shrink-0 flex flex-col items-end gap-2">
           {isStudying ? (
             <div className="flex flex-col items-end gap-1.5">
-              <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200 animate-pulse">
+              <span className="text-xs font-mono font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 animate-pulse flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                 {formatTimer(studyDurationSec)}
               </span>
               <button
                 onClick={finishStudySession}
-                className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition-all active:scale-95"
+                className="py-2 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
               >
                 <Square className="w-3.5 h-3.5 fill-current" />
                 <span>Terminer</span>
               </button>
             </div>
           ) : (
-            <button
-              onClick={() => startStudySession()}
-              className="py-2.5 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 transition-all active:scale-95"
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Étudier</span>
-            </button>
+            <div className="flex flex-col items-end gap-1.5">
+              <button
+                onClick={() => startStudySession()}
+                className="py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-500/20 flex items-center gap-1.5 transition-all active:scale-95 cursor-pointer"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>Lancer chrono</span>
+              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => addStudyMinutes(15)}
+                  title="Ajouter 15 minutes d'étude"
+                  className="px-2 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 rounded-lg text-[10px] font-bold border border-slate-200 transition-colors"
+                >
+                  +15m
+                </button>
+                <button
+                  onClick={() => addStudyMinutes(30)}
+                  title="Ajouter 30 minutes d'étude"
+                  className="px-2 py-1 bg-slate-100 hover:bg-blue-50 hover:text-blue-600 text-slate-600 rounded-lg text-[10px] font-bold border border-slate-200 transition-colors"
+                >
+                  +30m
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </div>

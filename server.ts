@@ -494,33 +494,37 @@ app.post('/api/courses/from-pdf', async (req, res) => {
   }
 
   try {
-    const strictPrompt = `Tu es STUDIA AI, assistant académique d'élite de haute précision.
-MISSIONS CRITIQUES :
-1. DÉTECTION ET RECONNAISSANCE AUTOMATIQUE DU MODULE DE CE COURS :
-   - Analyse attentivement l'en-tête, le titre et le contenu du document PDF pour reconnaître et identifier avec précision le nom du module universitaire ou de la matière (exemples réels : "Algorithmique & Structures de Données", "Probabilités & Statistiques", "Droit Civil", "Microéconomie", "Électromagnétisme", "Génétique", "Comptabilité Générale", "Thermodynamique", etc.).
-   - Identifie également le titre exact ou le chapitre précis de ce cours.
+    const strictPrompt = `Tu es STUDIA AI, professeur universitaire d'élite et concepteur pédagogique de haut niveau.
+MISSIONS IMPÉRATIVES :
+1. DÉTECTION AUTOMATIQUE DU MODULE ET DU TITRE :
+   - Analyse attentivement l'en-tête et le contenu pour identifier avec précision le nom du module universitaire exact (exemples : "Algorithmique & Structures de Données", "Probabilités & Statistiques", "Microéconomie", "Droit Civil", "Électromagnétisme", "Génétique", "Comptabilité Générale", etc.) et le titre du cours.
 
-2. RÉSUMÉ STRICTEMENT BASÉ SUR CE DOCUMENT PDF :
-   - RÈGLE ABSOLUE ET INVIOLABLE : Produis un résumé et une structuration du cours BASÉS STRICTEMENT ET EXCLUSIVEMENT SUR LE CONTENU DE CE DOCUMENT PDF.
-   - INTERDICTION FORMELLE d'ajouter la moindre information extérieure, fait ou notion non explicite dans ce PDF.
-   - Tout doit être fidèle à 100% au document fourni, sans aucune extrapolation.
+2. RÉSUMÉ EXHAUSTIF ET ULTRA-DÉTAILLÉ DU DOCUMENT PDF :
+   - RÈGLE ABSOLUE ET INVIOLABLE : Rédige un résumé COMPLET, TRÈS DÉTAILLÉ, APPROFONDI ET STRUCTURÉ de TOUS les détails, démonstrations, définitions, formules, algorithmes et notions du document.
+   - NE FAIS PAS UN RÉSUMÉ COURT OU SUPERFICIEL. L'étudiant doit pouvoir réviser l'intégralité du cours en profondeur pour réussir ses examens sans manquer le moindre détail.
+   - INTERDICTION FORMELLE d'ajouter des informations extérieures au document : tout doit être 100% fidèle au document PDF fourni.
 
 Langue de rédaction : ${language}.
 
 Format JSON attendu impérativement :
 {
-  "detectedModule": "Nom exact du module universitaire ou de la matière identifié avec précision dans le PDF",
-  "detectedTitle": "Titre exact du cours ou du chapitre extrait du PDF",
-  "summary": "Résumé fidèle et synthétique rédigé exclusivement à partir du contenu du document sans source externe",
+  "detectedModule": "Nom exact du module universitaire",
+  "detectedTitle": "Titre exact du cours ou chapitre",
+  "summary": "Grand résumé détaillé et structuré en plusieurs paragraphes complets expliquant l'intégralité des notions, démarches et concepts du document",
+  "detailedSummary": "Développement exhaustif et approfondi section par section de l'ensemble du cours",
   "chapters": [
-    { "title": "Titre du chapitre ou partie selon le PDF", "summary": "Points essentiels selon le document" }
+    {
+      "title": "Titre du chapitre ou partie selon le PDF",
+      "summary": "Explication complète et détaillée de cette partie, concepts abordés et méthodes pas-à-pas",
+      "keyPoints": ["Point d'apprentissage précis 1", "Point d'apprentissage précis 2"]
+    }
   ],
-  "keyConcepts": ["Concept 1 présent dans le document", "Concept 2 présent dans le document"],
+  "keyConcepts": ["Concept clé 1 avec explication approfondie", "Concept clé 2..."],
   "definitions": [
-    { "term": "Terme figurant dans le PDF", "definition": "Définition issue directement du texte" }
+    { "term": "Terme figurant dans le PDF", "definition": "Définition complète et rigoureuse issue directement du texte" }
   ],
-  "formulasOrTheorems": ["Formule ou théorème explicite du document"],
-  "examTips": ["Remarques ou points d'attention mentionnés dans le document"]
+  "formulasOrTheorems": ["Formule, théorème, algorithme ou loi explicite avec explication"],
+  "examTips": ["Points d'attention cruciaux pour les examens, pièges et cas limites mentionnés dans le document"]
 }`;
 
     let contentsPayload: any;
@@ -574,6 +578,7 @@ Format JSON attendu impérativement :
           title: ch.title || `Partie ${idx + 1}`,
           order: idx + 1,
           summary: ch.summary || '',
+          keyPoints: ch.keyPoints || [],
           completed: false,
         }))
       : [
@@ -581,7 +586,8 @@ Format JSON attendu impérativement :
             id: `ch-pdf-${Date.now()}-1`,
             title: 'Contenu principal du cours',
             order: 1,
-            summary: parsed.summary?.slice(0, 160) || '',
+            summary: parsed.summary || 'Synthèse détaillée du cours.',
+            keyPoints: parsed.keyConcepts || [],
             completed: false,
           },
         ];
@@ -595,7 +601,11 @@ Format JSON attendu impérativement :
       fileSize: fileSize || 'Document PDF',
       content: textContent || parsed.summary || 'Document PDF analysé fidèlement.',
       summary: parsed.summary,
-      keyConcepts: parsed.keyConcepts,
+      detailedSummary: parsed.detailedSummary || parsed.summary,
+      keyConcepts: parsed.keyConcepts || [],
+      definitions: parsed.definitions || [],
+      formulasOrTheorems: parsed.formulasOrTheorems || [],
+      examTips: parsed.examTips || [],
       createdAt: new Date().toISOString(),
     };
 
@@ -604,7 +614,7 @@ Format JSON attendu impérativement :
       userId: user.id,
       title: finalTitle,
       subject: finalSubject,
-      description: parsed.summary ? (parsed.summary.slice(0, 180) + '...') : 'Cours créé depuis un document PDF',
+      description: parsed.summary ? (parsed.summary.slice(0, 240) + '...') : 'Cours créé depuis un document PDF',
       color: randomColor,
       icon: 'FileText',
       chapters,
@@ -856,27 +866,72 @@ app.post('/api/ai/quiz-generate', async (req, res) => {
     const course = userCourses.find((c) => c.id === courseId);
     if (course) {
       courseTitle = course.title;
-      courseContext = course.documents.map((d) => d.content).join('\n\n').slice(0, 10000);
+      // Gather comprehensive details: text content, detailed summary, key concepts, formulas and definitions
+      const docChunks = course.documents.map((d) => {
+        let chunk = `=== DOCUMENT DE COURS : "${d.title}" ===\n`;
+        if (d.content && d.content.length > 50) {
+          chunk += `[CONTENU TEXTUEL DU PDF] :\n${d.content}\n\n`;
+        }
+        if (d.detailedSummary || d.summary) {
+          chunk += `[RÉSUMÉ EXHAUSTIF DU DOCUMENT] :\n${d.detailedSummary || d.summary}\n\n`;
+        }
+        if (d.keyConcepts && d.keyConcepts.length > 0) {
+          chunk += `[NOTIONS CLÉS DU SUPPORT] :\n${d.keyConcepts.join('\n• ')}\n\n`;
+        }
+        if (d.definitions && d.definitions.length > 0) {
+          chunk += `[DÉFINITIONS RIGOUROUSES] :\n${d.definitions.map(df => `${df.term} : ${df.definition}`).join('\n')}\n\n`;
+        }
+        if (d.formulasOrTheorems && d.formulasOrTheorems.length > 0) {
+          chunk += `[FORMULES, THÉORÈMES & ALGORITHMES] :\n${d.formulasOrTheorems.join('\n')}\n\n`;
+        }
+        if (d.examTips && d.examTips.length > 0) {
+          chunk += `[POINTS D'ATTENTION & PIÈGES] :\n${d.examTips.join('\n')}\n\n`;
+        }
+        return chunk;
+      });
+
+      // Also append chapters structure
+      if (course.chapters && course.chapters.length > 0) {
+        docChunks.push(
+          `=== STRUCTURE DES CHAPITRES DU COURS ===\n` +
+          course.chapters.map(ch => `• ${ch.title}: ${ch.summary || ''}`).join('\n')
+        );
+      }
+
+      courseContext = docChunks.join('\n\n').slice(0, 35000);
     }
   }
 
   try {
-    const prompt = `Crée un quiz pédagogique de ${questionCount} questions de difficulté "${difficulty}" sur le sujet : "${courseTitle}".
-Type de question : ${questionType} (ou panachage équilibré entre QCM, Vrai/Faux, texte à trous).
+    const prompt = `Tu es STUDIA AI, professeur universitaire d'élite et concepteur d'examens académiques.
+MISSION IMPÉRATIVE :
+Conçois un quiz d'évaluation de ${questionCount} questions de difficulté "${difficulty}" pour le cours "${courseTitle}".
+
+RÈGLE ABSOLUE ET INVIOLABLE (ORDRE STRICT DU PROFESSEUR) :
+1. FONDEMENT EXCLUSIF SUR LE DOCUMENT PDF :
+   - CHAQUE QUESTION, OPTION ET EXPLICATION DOIT ÊTRE BASÉE STRICTEMENT ET DIRECTEMENT SUR LES INFORMATIONS EXPLICITES DU DOCUMENT DE COURS CI-DESSOUS.
+   - INTERDICTION FORMELLE d'ajouter des informations extérieures ou de poser des questions sur des éléments non mentionnés dans ce document.
+2. COUVERTURE COMPLÈTE DU COURS :
+   - Explore les différentes parties du support : définitions exactes, théorèmes, formules, démarches méthodologiques, algorithmes, propriétés et exemples concrets du document.
+3. EXPLICATIONS PÉDAGOGIQUES :
+   - Chaque explication ("explanation") doit citer précisément la règle, définition ou théorème du document démontrant pourquoi la bonne réponse est exacte et pourquoi les pièges sont faux.
+
+Type de question : ${questionType} (panachage équilibré entre QCM à 4 options et questions réflexives).
 Langue : ${language}.
-${courseContext ? `Basé sur ce matériel de cours :\n"""\n${courseContext}\n"""` : ''}
+
+${courseContext ? `MATÉRIEL SOURCE DU DOCUMENT PDF DU COURS :\n"""\n${courseContext}\n"""` : ''}
 
 Réponds obligatoirement au format JSON suivant :
 {
-  "quizTitle": "Titre du Quiz",
+  "quizTitle": "Quiz officiel : ${courseTitle}",
   "questions": [
     {
       "id": "q1",
-      "question": "Énoncé clair et précis de la question",
+      "question": "Énoncé rigoureux de la question directement basé sur le texte du PDF",
       "type": "multiple_choice",
       "options": ["Option A", "Option B", "Option C", "Option D"],
-      "correctAnswer": "Option exacte identique à l'une des options",
-      "explanation": "Explication pédagogique complète et détaillée du pourquoi cette réponse est la bonne et pourquoi les autres sont fausses"
+      "correctAnswer": "Option exacte identique à l'une des 4 options",
+      "explanation": "Explication pédagogique citant le concept exact présent dans le document de cours"
     }
   ]
 }`;
@@ -1330,12 +1385,17 @@ app.post('/api/analytics/study-session', (req, res) => {
     }
   }
 
+  const todayStudyMinutes = sessions
+    .filter((s) => s.date === todayStr)
+    .reduce((acc, s) => acc + s.minutes, 0);
+
   return res.json({
     success: true,
     user,
     xpEarned,
     newLevel: user.level,
     streakDays: user.streakDays,
+    todayStudyMinutes,
     unlockedAchievement: newlyUnlockedAchievement,
   });
 });
@@ -1381,6 +1441,11 @@ app.get('/api/analytics/summary', (req, res) => {
   const quizzes = db.quizzes.get(user.id) || [];
   const achievements = db.achievements.get(user.id) || [];
 
+  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStudyMinutes = sessions
+    .filter((s) => s.date === todayStr)
+    .reduce((acc, s) => acc + s.minutes, 0);
+
   // Compute 7-day study minutes from actual sessions
   const last7Days = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
   const weeklyMetrics = last7Days.map((day) => ({
@@ -1395,6 +1460,7 @@ app.get('/api/analytics/summary', (req, res) => {
     : 0;
 
   return res.json({
+    todayStudyMinutes,
     totalStudyMinutes,
     completedSessionsCount: sessions.length,
     completedQuizzesCount: quizzes.length,

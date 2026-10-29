@@ -17,8 +17,10 @@ interface AuthContextType {
   isStudying: boolean;
   studyDurationSec: number;
   activeCourseId?: string;
+  todayStudyMinutes: number;
   startStudySession: (courseId?: string) => void;
   finishStudySession: () => Promise<{ xpEarned: number; newLevel: number; streakDays: number; unlockedAchievement?: Achievement | null } | null>;
+  addStudyMinutes: (minutes: number, courseId?: string) => Promise<void>;
   // Modal triggers
   showSubscriptionModal: boolean;
   setShowSubscriptionModal: (val: boolean) => void;
@@ -65,10 +67,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     achievement: null,
   });
 
-  // Active study timer
+  // Active study timer & minutes
   const [isStudying, setIsStudying] = useState<boolean>(false);
   const [studyDurationSec, setStudyDurationSec] = useState<number>(0);
   const [activeCourseId, setActiveCourseId] = useState<string | undefined>(undefined);
+  const [todayStudyMinutes, setTodayStudyMinutes] = useState<number>(0);
 
   const fetchCurrentUser = async () => {
     try {
@@ -77,6 +80,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(res.user);
       setIsOnboarded(true);
       localStorage.setItem('studia_onboarded', 'true');
+
+      // Fetch today's accumulated study minutes
+      try {
+        const summary = await api.getAnalyticsSummary();
+        if (summary && typeof summary.todayStudyMinutes === 'number') {
+          setTodayStudyMinutes(summary.todayStudyMinutes);
+        }
+      } catch (sumErr) {
+        // Non-critical
+      }
     } catch (err) {
       console.warn('No active session, defaulting to demo user initialization');
       // If server is available, attempt to initialize demo user
@@ -86,6 +99,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setUser(res.user);
         setIsOnboarded(true);
         localStorage.setItem('studia_onboarded', 'true');
+
+        const summary = await api.getAnalyticsSummary();
+        if (summary && typeof summary.todayStudyMinutes === 'number') {
+          setTodayStudyMinutes(summary.todayStudyMinutes);
+        }
       } catch (e) {
         setUser(null);
       }
@@ -162,6 +180,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const res = await api.logStudySession(minutes, activeCourseId);
       setUser(res.user);
+      if (typeof res.todayStudyMinutes === 'number') {
+        setTodayStudyMinutes(res.todayStudyMinutes);
+      } else {
+        setTodayStudyMinutes((prev) => prev + minutes);
+      }
       
       setCelebrationData({
         isOpen: true,
@@ -179,10 +202,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const addStudyMinutes = async (minutes: number, courseId?: string) => {
+    try {
+      const res = await api.logStudySession(minutes, courseId);
+      setUser(res.user);
+      if (typeof res.todayStudyMinutes === 'number') {
+        setTodayStudyMinutes(res.todayStudyMinutes);
+      } else {
+        setTodayStudyMinutes((prev) => prev + minutes);
+      }
+
+      setCelebrationData({
+        isOpen: true,
+        title: `+${minutes} minute${minutes > 1 ? 's' : ''} d’étude enregistrée${minutes > 1 ? 's' : ''} !`,
+        subtitle: `Ton objectif quotidien et tes points d’expérience progressent.`,
+        xpEarned: res.xpEarned,
+        minutes,
+        achievement: res.unlockedAchievement || null,
+      });
+    } catch (err) {
+      console.error('Error adding study minutes:', err);
+    }
+  };
+
   const resetStats = async () => {
     try {
       const res = await api.resetStats();
       setUser(res.user);
+      setTodayStudyMinutes(0);
     } catch (e) {
       console.error('Failed to reset stats:', e);
     }
@@ -204,8 +251,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isStudying,
         studyDurationSec,
         activeCourseId,
+        todayStudyMinutes,
         startStudySession,
         finishStudySession,
+        addStudyMinutes,
         showSubscriptionModal,
         setShowSubscriptionModal,
         celebrationData,

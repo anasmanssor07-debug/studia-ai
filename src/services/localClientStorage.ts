@@ -391,44 +391,113 @@ export const localClientStorage = {
       detectedTitle = cleanFileName.charAt(0).toUpperCase() + cleanFileName.slice(1);
     }
 
-    // 2. Strict Document-Grounded Chapters
+    // 2. Strict Document-Grounded Extraction
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     const chapterHeadings = lines.filter(l => 
       /^(chapitre|partie|section|module|\d+[\.\)]|[ivx]+[\.\)])\s+/i.test(l) && l.length < 80
     );
 
+    // Extract real definitions from the document
+    const extractedDefinitions: Array<{ term: string; definition: string }> = [];
+    const defRegex = /^(?:définition|définir|on appelle|est dit|est défini(?:e)?|désigne)\s*[:\-]?\s*(.+)/i;
+    for (const line of lines) {
+      if (defRegex.test(line) && line.length > 20 && line.length < 300) {
+        const parts = line.split(/[:\-–]/);
+        if (parts.length >= 2) {
+          extractedDefinitions.push({
+            term: parts[0].trim(),
+            definition: parts.slice(1).join(':').trim(),
+          });
+        }
+      }
+      if (extractedDefinitions.length >= 6) break;
+    }
+
+    // Extract formulas or theorems
+    const extractedFormulas: string[] = [];
+    for (const line of lines) {
+      if (/(?:théorème|propriété|lemme|corollaire|formule|règle|principe|loi)\s*[:\-]/i.test(line) && line.length < 250) {
+        extractedFormulas.push(line);
+      } else if (/[=≤≥∑∫√≠±]/.test(line) && line.length > 5 && line.length < 150) {
+        extractedFormulas.push(line);
+      }
+      if (extractedFormulas.length >= 6) break;
+    }
+
+    // Key concepts extracted from document
+    const extractedKeyConcepts: string[] = [];
+    for (const line of lines) {
+      if (/^[•\-\*]\s*(.+)/.test(line) && line.length > 15 && line.length < 150) {
+        extractedKeyConcepts.push(line.replace(/^[•\-\*]\s*/, '').trim());
+      }
+      if (extractedKeyConcepts.length >= 8) break;
+    }
+
+    // Build rich chapters based on the document text
     const chapters = chapterHeadings.length >= 2 
-      ? chapterHeadings.slice(0, 6).map((heading, idx) => ({
-          id: `ch-pdf-${Date.now()}-${idx}`,
-          title: heading,
-          order: idx + 1,
-          summary: `Synthèse de la partie ${heading} extraite directement du support.`,
-          completed: false,
-        }))
+      ? chapterHeadings.slice(0, 8).map((heading, idx) => {
+          // Find text following this heading up to the next heading
+          const hIdx = lines.indexOf(heading);
+          const nextH = chapterHeadings[idx + 1];
+          const nextHIdx = nextH ? lines.indexOf(nextH) : lines.length;
+          const sectionLines = lines.slice(hIdx + 1, Math.min(nextHIdx, hIdx + 15));
+          const secSummary = sectionLines.filter(l => l.length > 20).slice(0, 3).join(' ') || `Développement approfondi de la partie ${heading} d'après le document.`;
+          const secPoints = sectionLines.filter(l => l.length > 10 && l.length < 100).slice(0, 3);
+          
+          return {
+            id: `ch-pdf-${Date.now()}-${idx}`,
+            title: heading,
+            order: idx + 1,
+            summary: secSummary,
+            keyPoints: secPoints.length > 0 ? secPoints : [`Notions essentielles de ${heading}`, `Méthodes d'application issues du support`],
+            completed: false,
+          };
+        })
       : [
           {
             id: `ch-pdf-${Date.now()}-1`,
-            title: `Partie 1 : Fondements de ${detectedTitle}`,
+            title: `Partie 1 : Principes Fondamentaux & Définitions de ${detectedTitle}`,
             order: 1,
-            summary: `Notions clés et définitions issues directement du PDF.`,
+            summary: lines.slice(0, 8).filter(l => l.length > 20).join(' ') || `Fondements théoriques et terminologie extraits du document.`,
+            keyPoints: extractedKeyConcepts.slice(0, 3),
             completed: false,
           },
           {
             id: `ch-pdf-${Date.now()}-2`,
-            title: `Partie 2 : Approfondissement & Applications`,
+            title: `Partie 2 : Théorèmes, Propriétés & Démontrations`,
             order: 2,
-            summary: `Applications pratiques et théorèmes démontrés dans le document.`,
+            summary: lines.slice(8, 20).filter(l => l.length > 20).join(' ') || `Formules et règles d'application démontrées dans le support.`,
+            keyPoints: extractedKeyConcepts.slice(3, 6),
+            completed: false,
+          },
+          {
+            id: `ch-pdf-${Date.now()}-3`,
+            title: `Partie 3 : Applications & Exercices d'Examen`,
+            order: 3,
+            summary: `Méthodologie de résolution et cas pratiques développés dans le support de cours.`,
+            keyPoints: ['Méthode de résolution pas à pas', 'Vérification des hypothèses'],
             completed: false,
           },
         ];
 
-    // Summary strictly based on document text
-    const strictSummary = text.length > 100
-      ? text.slice(0, 500) + '...'
-      : `Ce cours complet porte sur ${detectedTitle} dans le cadre du module ${detectedModule}. Tous les chapitres et concepts sont fidèlement extraits de votre document.`;
+    // Build comprehensive, multi-paragraph summary from the text without truncation
+    const substantiveParagraphs = lines.filter(l => l.length > 40);
+    const detailedSummary = substantiveParagraphs.length >= 3
+      ? substantiveParagraphs.slice(0, 12).join('\n\n')
+      : (text.length > 50 ? text : `Ce cours de ${detectedModule} intitulé ${detectedTitle} rassemble l'ensemble des définitions, formules et notions clés du support original.`);
+
+    const strictSummary = detailedSummary.length > 1500
+      ? detailedSummary.slice(0, 1500) + '...'
+      : detailedSummary;
 
     const colors = ['#2563EB', '#8B5CF6', '#0EA5E9', '#10B981', '#F59E0B'];
     const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    const examTips = [
+      `Maîtriser impérativement les définitions clés de ${detectedTitle} qui reviennent fréquemment en examen.`,
+      `Bien vérifier les conditions d'application de chaque propriété énoncée dans le document avant d'appliquer les formules.`,
+      `S'entraîner à reproduire pas à pas les démarches de calcul et les démonstrations du polycopié.`,
+    ];
 
     const courseId = `crs-${Date.now()}`;
     const newDoc: CourseDocument = {
@@ -437,8 +506,13 @@ export const localClientStorage = {
       title: params.fileName,
       fileType: 'pdf',
       fileSize: params.fileSize,
-      content: text || strictSummary,
+      content: text || detailedSummary,
       summary: strictSummary,
+      detailedSummary: detailedSummary,
+      keyConcepts: extractedKeyConcepts.length > 0 ? extractedKeyConcepts : [`Concepts de base de ${detectedTitle}`, `Méthodologie d'application`],
+      definitions: extractedDefinitions,
+      formulasOrTheorems: extractedFormulas,
+      examTips: examTips,
       createdAt: new Date().toISOString(),
     };
 
@@ -447,7 +521,7 @@ export const localClientStorage = {
       userId,
       title: detectedTitle,
       subject: detectedModule,
-      description: strictSummary.slice(0, 160) + '...',
+      description: strictSummary.slice(0, 220) + '...',
       color: randomColor,
       icon: 'FileText',
       chapters,
@@ -473,7 +547,12 @@ export const localClientStorage = {
         detectedModule,
         detectedTitle,
         summary: strictSummary,
+        detailedSummary,
         chapters,
+        definitions: extractedDefinitions,
+        formulasOrTheorems: extractedFormulas,
+        examTips,
+        keyConcepts: extractedKeyConcepts,
       },
       strictDocumentOnly: true,
     };
@@ -692,6 +771,7 @@ export const localClientStorage = {
   // Analytics & Stats
   async getAnalyticsSummary(): Promise<{
     totalStudyMinutes: number;
+    todayStudyMinutes: number;
     completedSessionsCount: number;
     completedQuizzesCount: number;
     avgQuizScore: number;
@@ -710,7 +790,12 @@ export const localClientStorage = {
     const sessions = getStoredJson<Array<{ minutes: number; date: string }>>(`studia_sessions_${userId}`, []);
     const quizzes = getStoredJson<QuizResult[]>(`studia_quizzes_${userId}`, []);
 
-    const totalStudyMinutes = sessions.reduce((acc, s) => acc + s.minutes, 0);
+    const totalStudyMinutes = sessions.reduce((acc, s) => acc + (s.minutes || 0), 0);
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStudyMinutes = sessions
+      .filter(s => s.date && s.date.startsWith(todayStr))
+      .reduce((acc, s) => acc + (s.minutes || 0), 0);
+
     const avgScore = quizzes.length > 0 
       ? Math.round(quizzes.reduce((acc, q) => acc + q.percentage, 0) / quizzes.length) 
       : 0;
@@ -724,6 +809,7 @@ export const localClientStorage = {
 
     return {
       totalStudyMinutes,
+      todayStudyMinutes,
       completedSessionsCount: sessions.length,
       completedQuizzesCount: quizzes.length,
       avgQuizScore: avgScore,
@@ -743,6 +829,7 @@ export const localClientStorage = {
     xpEarned: number;
     newLevel: number;
     streakDays: number;
+    todayStudyMinutes: number;
     unlockedAchievement?: Achievement | null;
   }> {
     const userId = getCurrentUserId();
@@ -764,6 +851,11 @@ export const localClientStorage = {
     setStoredJson(`studia_sessions_${userId}`, sessions);
     setStoredJson('studia_local_users', users);
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStudyMinutes = sessions
+      .filter(s => s.date && s.date.startsWith(todayStr))
+      .reduce((acc, s) => acc + (s.minutes || 0), 0);
+
     const { password: _, ...cleanUser } = user;
     return {
       success: true,
@@ -771,6 +863,7 @@ export const localClientStorage = {
       xpEarned,
       newLevel: user.level,
       streakDays: user.streakDays,
+      todayStudyMinutes,
     };
   },
 
@@ -881,23 +974,133 @@ export const localClientStorage = {
   },
 
   async generateQuiz(params: any): Promise<{ quiz: any }> {
+    const userId = getCurrentUserId();
+    const courses = getStoredJson<Course[]>(`studia_courses_${userId}`, []);
+    const course = courses.find(c => c.id === params.courseId) || courses[0];
+    const doc = course?.documents?.[0];
+    const count = params.questionCount || 5;
+
+    const questions: any[] = [];
+    const courseTitle = course?.title || params.topic || 'Module universitaire';
+
+    // 1. Questions from real definitions in the document
+    if (doc?.definitions && doc.definitions.length > 0) {
+      doc.definitions.forEach((def, idx) => {
+        if (questions.length >= count) return;
+        const correct = def.definition;
+        const options = [
+          correct,
+          `Propriété secondaire non applicable à ${def.term}`,
+          `Mécanisme générique externe au cours de ${courseTitle}`,
+          `Hypothèse simplificatrice sans validation empirique`,
+        ];
+        // Shuffle options
+        const shuffled = options.sort(() => 0.5 - Math.random());
+        questions.push({
+          id: `q-def-${idx}`,
+          question: `D'après le document de cours, comment est rigoureusement défini : "${def.term}" ?`,
+          type: 'multiple_choice',
+          options: shuffled,
+          correctAnswer: correct,
+          explanation: `Le support de cours énonce formellement que "${def.term}" correspond à : ${def.definition}.`,
+        });
+      });
+    }
+
+    // 2. Questions from formulas and theorems in the document
+    if (doc?.formulasOrTheorems && doc.formulasOrTheorems.length > 0 && questions.length < count) {
+      doc.formulasOrTheorems.forEach((formula, idx) => {
+        if (questions.length >= count) return;
+        const correct = `Elle est explicitement démontrée et énoncée comme règle fondamentale dans le document.`;
+        const options = [
+          correct,
+          `Elle n'est valable que si les conditions initiales sont totalement nulles.`,
+          `Elle a été réfutée dans les conclusions du polycopié.`,
+          `Elle ne s'applique qu'en dehors du champ d'étude de ${courseTitle}.`,
+        ];
+        const shuffled = options.sort(() => 0.5 - Math.random());
+        questions.push({
+          id: `q-form-${idx}`,
+          question: `Concernant la relation ou le théorème suivant issu du support : "${formula}", quelle proposition est conforme au cours ?`,
+          type: 'multiple_choice',
+          options: shuffled,
+          correctAnswer: correct,
+          explanation: `D'après le document original, cette règle constitue l'un des piliers méthodologiques à appliquer rigoureusement.`,
+        });
+      });
+    }
+
+    // 3. Questions from chapters
+    if (course?.chapters && course.chapters.length > 0 && questions.length < count) {
+      course.chapters.forEach((ch, idx) => {
+        if (questions.length >= count) return;
+        const correct = ch.summary || `Assimilation des concepts clés et démarche d'analyse de ${ch.title}`;
+        const options = [
+          correct,
+          `Mémorisation superficielle sans application aux exercices`,
+          `Ignorer les étapes de calcul et passer directement au résultat`,
+          `Remplacement des théorèmes par des estimations arbitraires`,
+        ];
+        const shuffled = options.sort(() => 0.5 - Math.random());
+        questions.push({
+          id: `q-chap-${idx}`,
+          question: `Quel est l'axe d'apprentissage central développé dans la partie "${ch.title}" selon le cours ?`,
+          type: 'multiple_choice',
+          options: shuffled,
+          correctAnswer: correct,
+          explanation: `La partie "${ch.title}" vise précisément : ${correct}.`,
+        });
+      });
+    }
+
+    // 4. Questions from key concepts or document lines
+    if (questions.length < count && doc?.content) {
+      const meaningfulSentences = doc.content
+        .split(/[.\n]/)
+        .map(s => s.trim())
+        .filter(s => s.length > 35 && s.length < 180);
+
+      meaningfulSentences.slice(0, count - questions.length).forEach((sentence, idx) => {
+        const correct = sentence;
+        const options = [
+          correct,
+          `Une affirmation en contradiction directe avec les principes du support`,
+          `Un cas particulier non généralisable mentionné comme contre-exemple`,
+          `Une hypothèse rejetée lors des démonstrations du document`,
+        ];
+        const shuffled = options.sort(() => 0.5 - Math.random());
+        questions.push({
+          id: `q-sent-${idx}`,
+          question: `Selon les énoncés exacts du document de cours, laquelle de ces propositions reflète fidèlement le texte ?`,
+          type: 'multiple_choice',
+          options: shuffled,
+          correctAnswer: correct,
+          explanation: `Cette formulation provient textuellement du document de cours : "${sentence}".`,
+        });
+      });
+    }
+
+    // Fallback if no doc content was present
+    if (questions.length === 0) {
+      questions.push({
+        id: 'q-base-1',
+        question: `Dans le cadre de l'étude de ${courseTitle}, quelle est la démarche méthodologique préconisée ?`,
+        type: 'multiple_choice',
+        options: [
+          'Vérifier les hypothèses préalables et appliquer les définitions pas à pas',
+          'Sauter les démonstrations théoriques',
+          'Utiliser des formules sans contrôler leur domaine de validité',
+          'Négliger les unités et les ordres de grandeur',
+        ],
+        correctAnswer: 'Vérifier les hypothèses préalables et appliquer les définitions pas à pas',
+        explanation: 'La rigueur académique requiert toujours la vérification des conditions de validité avant application.',
+      });
+    }
+
     return {
       quiz: {
-        quizTitle: `Quiz : ${params.topic || 'Connaissances Fondamentales'}`,
-        questions: [
-          {
-            id: 'q1',
-            question: 'Quel est l’objectif principal de cette notion selon le cours ?',
-            options: [
-              'Structurer et optimiser la résolution du problème',
-              'Ignorer les contraintes de mémoire',
-              'Répéter indéfiniment les étapes',
-              'Aucune de ces réponses',
-            ],
-            correctAnswerIndex: 0,
-            explanation: 'D’après le support de cours, l’objectif est d’assurer une résolution structurée et rigoureuse.',
-          },
-        ],
+        quizTitle: `Quiz basé sur votre document : ${courseTitle}`,
+        questions: questions.slice(0, count),
       },
     };
   },
