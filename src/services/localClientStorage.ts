@@ -17,6 +17,7 @@ import type {
   QuizResult,
   WeeklyStudyMetric,
   AcademicLevel,
+  UserUsageLimits,
 } from '../types/index.ts';
 
 const DEMO_USER_ID = 'usr-demo-1';
@@ -694,6 +695,9 @@ export const localClientStorage = {
 
   async generateFlashcards(params: {
     courseId?: string;
+    courseName?: string;
+    topic?: string;
+    rawText?: string;
     count?: number;
     language?: string;
   }): Promise<{ flashcards: Flashcard[] }> {
@@ -703,10 +707,73 @@ export const localClientStorage = {
     const existing = getStoredJson<Flashcard[]>(`studia_flashcards_${userId}`, []);
 
     const count = params.count || 5;
-    const courseTitle = course?.title || 'Notions Fondamentales';
+    const resolvedCourseTitle = params.courseName || course?.title || 'Notions Fondamentales';
+    const resolvedTopic = params.topic || 'Concepts Clés';
     const doc = course?.documents?.[0];
 
     const newCards: Flashcard[] = [];
+
+    // If student provided rawText or topic directly
+    if (params.rawText && params.rawText.trim().length > 20) {
+      const raw = params.rawText.trim();
+      const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+      
+      // Look for lines with colon (Definition pattern "Term: Definition")
+      lines.forEach((line, idx) => {
+        if (newCards.length >= count) return;
+        const match = line.match(/^([A-Za-z0-9\sÀ-ÿ\-]{2,35})\s*[:=]\s*(.+)/);
+        if (match) {
+          const term = match[1].trim();
+          const def = match[2].trim();
+          const front = `Définition & Rôle : Qu'est-ce que "${term}" ?`;
+          const back = `${def}\n\nExplication : Cette notion est un pilier fondamental de ${resolvedCourseTitle}. Il est primordial de la maîtriser pour les évaluations.`;
+          newCards.push({
+            id: `fc-raw-${Date.now()}-${idx}`,
+            courseId: course?.id || 'crs-gen',
+            courseTitle: resolvedCourseTitle,
+            topic: resolvedTopic,
+            front,
+            back,
+            question: front,
+            answer: back,
+            concept: term,
+            explanation: `Définition exacte issue du cours : ${def}`,
+            box: 1,
+            timesReviewed: 0,
+            timesCorrect: 0,
+            nextReviewDate: new Date().toISOString().split('T')[0],
+          });
+        }
+      });
+
+      // If more cards needed, extract key sentences
+      if (newCards.length < count) {
+        const sentences = raw.split(/[.!?]+/).map(s => s.trim()).filter(s => s.length > 25 && s.length < 200);
+        sentences.forEach((sentence, idx) => {
+          if (newCards.length >= count) return;
+          const front = `Point clé (${resolvedTopic}) : Quel élément essentiel faut-il retenir sur ce point ?`;
+          const back = `${sentence}.\n\nExplication : Ce point résume une règle ou une méthode clé directement applicable en TD et examen.`;
+          newCards.push({
+            id: `fc-sen-${Date.now()}-${idx}`,
+            courseId: course?.id || 'crs-gen',
+            courseTitle: resolvedCourseTitle,
+            topic: resolvedTopic,
+            front,
+            back,
+            question: front,
+            answer: back,
+            concept: resolvedTopic,
+            explanation: sentence,
+            box: 1,
+            timesReviewed: 0,
+            timesCorrect: 0,
+            nextReviewDate: new Date().toISOString().split('T')[0],
+          });
+        });
+      }
+    }
+
+    // If still need cards or using stored course
     const defs = doc?.definitions || [];
     const formulas = doc?.formulasOrTheorems || [];
     const chapters = course?.chapters || [];
@@ -715,13 +782,19 @@ export const localClientStorage = {
     // 1. Cards from definitions
     defs.forEach((d, idx) => {
       if (newCards.length >= count) return;
+      const front = `Définition officielle : Qu'est-ce que "${d.term}" ?`;
+      const back = `${d.definition}\n\nExplication : Maîtriser cette définition exacte permet de valider les questions de cours théoriques en examen.`;
       newCards.push({
         id: `fc-def-${Date.now()}-${idx}`,
         courseId: course?.id || 'crs-gen',
-        courseTitle,
+        courseTitle: resolvedCourseTitle,
         topic: `Définition : ${d.term}`,
-        question: `D'après le cours, quelle est la définition exacte de "${d.term}" ?`,
-        answer: d.definition,
+        front,
+        back,
+        question: front,
+        answer: back,
+        concept: d.term,
+        explanation: d.definition,
         box: 1,
         timesReviewed: 0,
         timesCorrect: 0,
@@ -733,13 +806,19 @@ export const localClientStorage = {
     formulas.forEach((f, idx) => {
       if (newCards.length >= count) return;
       const fTitle = f.split(/[:=]/)[0]?.trim() || `Théorème ${idx + 1}`;
+      const front = `Formule & Théorème : Quel est l'énoncé de "${fTitle}" ?`;
+      const back = `${f}\n\nExplication : Bien vérifier les hypothèses de départ avant d'appliquer cette relation dans un exercice.`;
       newCards.push({
         id: `fc-form-${Date.now()}-${idx}`,
         courseId: course?.id || 'crs-gen',
-        courseTitle,
-        topic: `Formule & Théorème`,
-        question: `Quel est l'énoncé ou la formule démontrée pour : ${fTitle} ?`,
-        answer: f,
+        courseTitle: resolvedCourseTitle,
+        topic: `Formule & Propriété`,
+        front,
+        back,
+        question: front,
+        answer: back,
+        concept: fTitle,
+        explanation: f,
         box: 1,
         timesReviewed: 0,
         timesCorrect: 0,
@@ -750,13 +829,19 @@ export const localClientStorage = {
     // 3. Cards from chapters
     chapters.forEach((ch, idx) => {
       if (newCards.length >= count) return;
+      const front = `Synthèse de chapitre : Quels sont les points clés de "${ch.title}" ?`;
+      const back = `${ch.summary}${ch.keyPoints && ch.keyPoints.length ? '\n\nPoints clés : ' + ch.keyPoints.join(' · ') : ''}\n\nExplication : Structurer sa révision selon ces axes permet de couvrir le programme complet.`;
       newCards.push({
         id: `fc-ch-${Date.now()}-${idx}`,
         courseId: course?.id || 'crs-gen',
-        courseTitle,
+        courseTitle: resolvedCourseTitle,
         topic: ch.title,
-        question: `Quels sont les objectifs et points clés de la partie "${ch.title}" ?`,
-        answer: `${ch.summary}${ch.keyPoints && ch.keyPoints.length ? '\n\nPoints clés : ' + ch.keyPoints.join(' · ') : ''}`,
+        front,
+        back,
+        question: front,
+        answer: back,
+        concept: ch.title,
+        explanation: ch.summary,
         box: 1,
         timesReviewed: 0,
         timesCorrect: 0,
@@ -767,13 +852,19 @@ export const localClientStorage = {
     // 4. Cards from exam tips
     tips.forEach((t, idx) => {
       if (newCards.length >= count) return;
+      const front = `Piège d'examen : Quel écueil classique faut-il éviter pour "${resolvedCourseTitle}" ?`;
+      const back = `${t}\n\nExplication : Ce point d'attention est relevé fréquemment lors des corrections d'épreuves.`;
       newCards.push({
         id: `fc-tip-${Date.now()}-${idx}`,
         courseId: course?.id || 'crs-gen',
-        courseTitle,
-        topic: `Astuce d'Examen`,
-        question: `Quel piège d'examen fréquent faut-il éviter pour "${courseTitle}" ?`,
-        answer: t,
+        courseTitle: resolvedCourseTitle,
+        topic: `Conseil d'Examen`,
+        front,
+        back,
+        question: front,
+        answer: back,
+        concept: `Méthode`,
+        explanation: t,
         box: 1,
         timesReviewed: 0,
         timesCorrect: 0,
@@ -781,19 +872,43 @@ export const localClientStorage = {
       });
     });
 
-    // 5. Fallback if no specific doc elements
+    // 5. High-impact fallback cards
     if (newCards.length === 0) {
-      newCards.push({
-        id: `fc-base-${Date.now()}-1`,
-        courseId: course?.id || 'crs-gen',
-        courseTitle,
-        topic: `Méthodologie`,
-        question: `Quelle est la règle d'or pour réussir l'examen de ${courseTitle} ?`,
-        answer: `Maîtriser les définitions fondamentales, vérifier le domaine de validité des théorèmes et pratiquer la répétition espacée.`,
-        box: 1,
-        timesReviewed: 0,
-        timesCorrect: 0,
-        nextReviewDate: new Date().toISOString().split('T')[0],
+      const fallbackItems = [
+        {
+          front: `Définition fondamentale : Qu'est-ce que ${resolvedTopic} dans le cadre de ${resolvedCourseTitle} ?`,
+          back: `${resolvedTopic} désigne le concept central structurant les méthodes et applications de ce cours.\n\nExplication : Comprendre sa définition précise évite les confusions fréquentes lors des QCM et épreuves.`,
+          concept: resolvedTopic,
+        },
+        {
+          front: `Méthode de révision : Comment mémoriser efficacement les formules et règles de ${resolvedCourseTitle} ?`,
+          back: `Pratiquer le rappel actif quotidien et l'auto-évaluation par flashcards avec la méthode Leitner.\n\nExplication : La répétition espacée multiplie par 3 la rétention à long terme pour les partiels.`,
+          concept: 'Mémorisation active',
+        },
+        {
+          front: `Point de vigilance : Quelles sont les erreurs d'inattention les plus courantes pour ${resolvedCourseTitle} ?`,
+          back: `Négliger les hypothèses préliminaires et confondre les définitions voisines.\n\nExplication : Toujours justifier rigoureusement chaque étape de son raisonnement sur la copie.`,
+          concept: 'Vigilance examen',
+        }
+      ];
+
+      fallbackItems.forEach((item, idx) => {
+        newCards.push({
+          id: `fc-base-${Date.now()}-${idx}`,
+          courseId: course?.id || 'crs-gen',
+          courseTitle: resolvedCourseTitle,
+          topic: resolvedTopic,
+          front: item.front,
+          back: item.back,
+          question: item.front,
+          answer: item.back,
+          concept: item.concept,
+          explanation: item.back,
+          box: 1,
+          timesReviewed: 0,
+          timesCorrect: 0,
+          nextReviewDate: new Date().toISOString().split('T')[0],
+        });
       });
     }
 
@@ -1029,7 +1144,103 @@ export const localClientStorage = {
     };
   },
 
-  // Subscriptions
+  getLocalUsage(userId: string) {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const thisMonthStr = new Date().toISOString().slice(0, 7);
+
+    const usage = getStoredJson<any>(`studia_usage_${userId}`, {
+      questionsToday: 0,
+      lastQuestionDate: todayStr,
+      summariesThisMonth: 0,
+      lastSummaryMonth: thisMonthStr,
+      quizzesToday: 0,
+      lastQuizDate: todayStr,
+    });
+
+    if (usage.lastQuestionDate !== todayStr) {
+      usage.questionsToday = 0;
+      usage.lastQuestionDate = todayStr;
+    }
+    if (usage.lastSummaryMonth !== thisMonthStr) {
+      usage.summariesThisMonth = 0;
+      usage.lastSummaryMonth = thisMonthStr;
+    }
+    if (usage.lastQuizDate !== todayStr) {
+      usage.quizzesToday = 0;
+      usage.lastQuizDate = todayStr;
+    }
+
+    setStoredJson(`studia_usage_${userId}`, usage);
+    return usage;
+  },
+
+  async getUserUsage(): Promise<{ usage: UserUsageLimits; subscription: any }> {
+    const userId = getCurrentUserId();
+    const users = getLocalUsers();
+    const user = users[userId] || users[DEMO_USER_ID];
+    const sub = user?.subscription || {
+      tier: 'free_trial',
+      status: 'active',
+      isTrialActive: true,
+      planName: 'Essai Découverte 48h',
+      priceMAD: 0,
+    };
+
+    const now = Date.now();
+    let trialHoursRemaining = 0;
+    if (sub.tier === 'free_trial' && sub.trialExpiresAt) {
+      const diff = new Date(sub.trialExpiresAt).getTime() - now;
+      trialHoursRemaining = Math.max(0, Math.ceil(diff / (1000 * 3600)));
+      if (trialHoursRemaining === 0) {
+        sub.tier = 'free_plan';
+        sub.isTrialActive = false;
+        sub.status = 'active';
+        sub.planName = 'Plan Gratuit';
+        if (users[userId]) {
+          users[userId].subscription = sub;
+          setStoredJson('studia_local_users', users);
+        }
+      }
+    }
+
+    const isPremium = (sub.tier === 'premium' || sub.tier === 'gold') && sub.status === 'active';
+    const isTrialActive = sub.tier === 'free_trial' && sub.isTrialActive && trialHoursRemaining > 0;
+    const isFree = !isPremium && !isTrialActive;
+
+    const usage = this.getLocalUsage(userId);
+    const aiLimit = isFree ? 5 : 100;
+    const sumLimit = isFree ? 3 : 50;
+
+    const usageData: UserUsageLimits = {
+      tier: sub.tier,
+      isTrialActive,
+      trialHoursRemaining,
+      isTrialExpired: sub.tier === 'free_trial' && trialHoursRemaining === 0,
+      isPremium,
+      aiQuestions: {
+        usedToday: usage.questionsToday,
+        limit: aiLimit,
+        remainingToday: Math.max(0, aiLimit - usage.questionsToday),
+        resetsAt: 'minuit (00:00)',
+      },
+      summaries: {
+        usedThisMonth: usage.summariesThisMonth,
+        limit: sumLimit,
+        remainingThisMonth: Math.max(0, sumLimit - usage.summariesThisMonth),
+        resetsAt: '1er du mois',
+      },
+      quizzes: {
+        usedToday: usage.quizzesToday,
+        maxQuestionsPerQuiz: isFree ? 5 : 20,
+        isAdvancedAllowed: !isFree,
+      },
+      canGenerateStudyPlan: !isFree,
+      canGenerateExamSimulation: !isFree,
+    };
+
+    return { usage: usageData, subscription: sub };
+  },
+
   async getSubscriptionStatus(): Promise<any> {
     return {
       subscription: {
@@ -1259,6 +1470,18 @@ export const localClientStorage = {
     targetLanguage?: string;
   }): Promise<{ reply: string; sourceDocTitle?: string }> {
     const userId = getCurrentUserId();
+    const users = getLocalUsers();
+    const user = users[userId] || users[DEMO_USER_ID];
+    const sub = user?.subscription;
+    const isFree = sub?.tier === 'free_plan' || sub?.tier === 'free_expired' || (sub?.tier === 'free_trial' && sub?.trialExpiresAt && Date.now() > new Date(sub.trialExpiresAt).getTime());
+
+    const usage = this.getLocalUsage(userId);
+    if (isFree && usage.questionsToday >= 5) {
+      throw new Error("Limite quotidienne atteinte (5/5 questions utilisées aujourd'hui). Vos 5 questions gratuites seront réinitialisées à minuit (00:00). Passez à l'offre Premium (40 MAD/mois) pour un accès illimité.");
+    }
+    usage.questionsToday += 1;
+    setStoredJson(`studia_usage_${userId}`, usage);
+
     const courses = getStoredJson<Course[]>(`studia_courses_${userId}`, []);
     
     if (courses.length === 0) {
@@ -1376,51 +1599,169 @@ export const localClientStorage = {
     };
   },
 
-  async generateSummary(params: any): Promise<{ result: any }> {
+  async generateSummary(params: {
+    courseId?: string;
+    courseName?: string;
+    topic?: string;
+    documentId?: string;
+    chapterTitle?: string;
+    rawText?: string;
+    language?: string;
+  }): Promise<{ result: any }> {
     const userId = getCurrentUserId();
+    const users = getLocalUsers();
+    const user = users[userId] || users[DEMO_USER_ID];
+    const sub = user?.subscription;
+    const isFree = sub?.tier === 'free_plan' || sub?.tier === 'free_expired' || (sub?.tier === 'free_trial' && sub?.trialExpiresAt && Date.now() > new Date(sub.trialExpiresAt).getTime());
+
+    const usage = this.getLocalUsage(userId);
+    if (isFree && usage.summariesThisMonth >= 3) {
+      throw new Error("Limite mensuelle atteinte (3/3 résumés générés ce mois-ci). Vos 3 résumés gratuits seront réinitialisés le 1er du mois prochain. Passez à STUDIA AI Premium (40 MAD/mois) pour des résumés illimités.");
+    }
+    usage.summariesThisMonth += 1;
+    setStoredJson(`studia_usage_${userId}`, usage);
+
     const courses = getStoredJson<Course[]>(`studia_courses_${userId}`, []);
     const course = (params.courseId ? courses.find(c => c.id === params.courseId) : null) || courses.find(c => c.documents && c.documents.length > 0) || courses[0];
     const doc = (course?.documents || []).find(d => !params.documentId || d.id === params.documentId) || course?.documents?.[0];
 
-    const courseTitle = course?.title || 'Cours';
-    const defs = doc?.definitions || [];
-    const formulas = doc?.formulasOrTheorems || [];
-    const chapters = course?.chapters || [];
-    const tips = doc?.examTips || [
-      `Maîtriser les définitions fondamentales de ${courseTitle}.`,
-      `Vérifier les hypothèses préalables avant d'appliquer les théorèmes.`,
-    ];
+    const resolvedCourseTitle = params.courseName || course?.title || 'Module universitaire';
+    const resolvedTopic = params.topic || params.chapterTitle || doc?.title || 'Notions Fondamentales';
+    const text = params.rawText || doc?.content || '';
 
-    const summarySections: string[] = [];
-    summarySections.push(`## 1. Vue d'Ensemble & Objectifs du Cours\nCe document constitue le support officiel pour ${courseTitle} (${course?.subject || 'Module universitaire'}). Il rassemble l'ensemble des notions, démonstrations et méthodes indispensables.`);
+    const extractedDefinitions: Array<{ term: string; definition: string }> = [];
+    const sections: Array<{
+      sectionNumber: number;
+      title: string;
+      content: string;
+      definitions?: Array<{ term: string; definition: string }>;
+      keyPoints?: string[];
+    }> = [];
+    const keyTakeaways: string[] = [];
 
-    if (defs.length > 0) {
-      summarySections.push(`## 2. Définitions Fondamentales du Support\n` + defs.map(d => `• **${d.term}** : ${d.definition}`).join('\n'));
+    if (text && text.trim().length > 20) {
+      const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+      // 1. Extract definitions matching "Term: Definition" or "Term est..."
+      rawLines.forEach(l => {
+        const defMatch = l.match(/^([A-Za-z0-9\sÀ-ÿ\-]{2,30})\s*[:=]\s*(.+)/);
+        if (defMatch && extractedDefinitions.length < 8) {
+          extractedDefinitions.push({
+            term: defMatch[1].trim(),
+            definition: defMatch[2].trim(),
+          });
+        }
+      });
+
+      // 2. Identify sections or create balanced ones
+      const sectionHeadings = rawLines.filter(l => 
+        l.startsWith('#') || 
+        l.match(/^(Chapitre|Partie|Section|[0-9]+[\.\)])\s+/i) || 
+        (l.length < 60 && l.endsWith(':'))
+      ).map(l => l.replace(/^[#0-9\.\)\s]+/, '').replace(/:$/, '').trim());
+
+      const chosenHeadings = sectionHeadings.length >= 2 
+        ? sectionHeadings.slice(0, 4)
+        : [
+            `Définition et Principes Fondamentaux de ${resolvedTopic}`,
+            `Typologie, Caractéristiques et Mécanismes Clés`,
+            `Importance, Rôle et Applications Pratiques de ${resolvedCourseTitle}`
+          ];
+
+      chosenHeadings.forEach((heading, idx) => {
+        const secNum = idx + 1;
+        let secParagraph = '';
+        const relatedDefs = extractedDefinitions.slice(idx * 2, idx * 2 + 2);
+
+        if (idx === 0) {
+          secParagraph = `${resolvedTopic} constitue une composante essentielle dans l'étude de ${resolvedCourseTitle}. Les principes reposent sur un ensemble de règles, de conventions et de protocoles validés permettant d'assurer la cohérence et l'efficacité des démarches méthodologiques.`;
+          if (relatedDefs.length > 0) {
+            secParagraph += '\n\n' + relatedDefs.map(d => `${d.term}: ${d.definition}`).join('\n');
+          }
+        } else if (idx === 1) {
+          secParagraph = `L'analyse approfondie met en évidence plusieurs catégories et classifications distinctes. Chaque type répond à des contraintes techniques ou opérationnelles spécifiques adaptées aux contextes d'application.`;
+          if (relatedDefs.length > 0) {
+            secParagraph += '\n\n' + relatedDefs.map(d => `${d.term}: ${d.definition}`).join('\n');
+          }
+        } else {
+          secParagraph = `La maîtrise de ${resolvedTopic} permet aux étudiants et praticiens de comprendre les enjeux réels, d'optimiser l'échange d'informations et de résoudre méthodiquement les problèmes types rencontrés lors des examens universitaires.`;
+        }
+
+        sections.push({
+          sectionNumber: secNum,
+          title: heading,
+          content: secParagraph,
+          definitions: relatedDefs,
+          keyPoints: [
+            `Assimiler rigoureusement la terminologie de ${heading}`,
+            `Savoir relier les concepts théoriques aux exercices pratiques`
+          ]
+        });
+      });
+    } else {
+      // Fallback sections if no text provided
+      sections.push({
+        sectionNumber: 1,
+        title: `Définition et Cadre Général de ${resolvedTopic}`,
+        content: `${resolvedTopic} est un domaine clé au sein de ${resolvedCourseTitle}. Il regroupe l'ensemble des définitions formelles et des concepts directeurs nécessaires à la compréhension globale de la discipline.`,
+        keyPoints: [`Comprendre le vocabulaire de base`, `Identifier le domaine d'application`]
+      });
+      sections.push({
+        sectionNumber: 2,
+        title: `Concepts Clés et Définitions Essentielles`,
+        content: `Pour réussir les évaluations sur ${resolvedTopic}, l'étudiant doit distinguer avec précision les différentes notions et leurs propriétés distinctives.`,
+        keyPoints: [`Maîtriser chaque formule ou règle sans approximation`, `Vérifier systématiquement les hypothèses`]
+      });
+      sections.push({
+        sectionNumber: 3,
+        title: `Importance et Applications Pratiques`,
+        content: `Ces notions permettent de modéliser des situations réelles, d'analyser des données structurées et de répondre aux questions de synthèse en partiel.`,
+        keyPoints: [`Méthodologie d'application pas-à-pas`, `Rédaction claire et argumentée sur la copie`]
+      });
     }
 
-    if (formulas.length > 0) {
-      summarySections.push(`## 3. Propriétés, Formules & Théorèmes Clés\n` + formulas.map(f => `• ${f}`).join('\n'));
+    if (extractedDefinitions.length === 0) {
+      extractedDefinitions.push(
+        { term: resolvedTopic, definition: `Concept central étudié dans ${resolvedCourseTitle}, structuré par des règles théoriques et des cas d'usage concrets.` },
+        { term: 'Méthode d’analyse', definition: 'Démarche rigoureuse permettant de décomposer un problème en étapes logiques vérifiables.' }
+      );
     }
 
-    if (chapters.length > 0) {
-      summarySections.push(`## 4. Analyse Détaillée des Parties du Cours\n` + chapters.map(ch => `### ${ch.title}\n${ch.summary}${ch.keyPoints && ch.keyPoints.length ? '\nPoints essentiels : ' + ch.keyPoints.join(' · ') : ''}`).join('\n\n'));
-    }
+    keyTakeaways.push(
+      `Maîtriser la définition exacte de ${resolvedTopic}.`,
+      `Bien repérer les différences entre chaque notion pour éviter les confusions lors des questions à choix multiples.`,
+      `Pratiquer l'auto-évaluation régulière avec les flashcards et les quiz de STUDIA AI.`
+    );
 
-    if (tips.length > 0) {
-      summarySections.push(`## 5. Astuces & Pièges d'Examen Fréquents\n` + tips.map(t => `⚠️ ${t}`).join('\n'));
-    }
+    // Build the exact academic summary text requested by the user:
+    // TITLE: ...
+    // SECTION 1: ...
+    // SECTION 2: ...
+    // SECTION 3: ...
+    const textBlocks: string[] = [];
+    textBlocks.push(`TITLE: ${resolvedCourseTitle} - ${resolvedTopic}`);
 
-    const structuredSummary = summarySections.join('\n\n');
+    sections.forEach(sec => {
+      textBlocks.push(`SECTION ${sec.sectionNumber}: ${sec.title}\n${sec.content}`);
+    });
+
+    const academicSummaryText = textBlocks.join('\n\n');
 
     return {
       result: {
-        title: `Fiche de révision : ${courseTitle}`,
-        summary: structuredSummary,
-        keyConcepts: doc?.keyConcepts || [`Concepts clés de ${courseTitle}`],
-        definitions: defs,
-        formulasOrTheorems: formulas,
-        examTips: tips,
-      },
+        title: `TITLE: ${resolvedCourseTitle} - ${resolvedTopic}`,
+        courseName: resolvedCourseTitle,
+        topic: resolvedTopic,
+        academicSummaryText,
+        summary: academicSummaryText,
+        sections,
+        definitions: extractedDefinitions,
+        keyTakeaways,
+        examTips: [
+          `Apprenez par cœur les définitions de la Section 1 : elles rapportent des points immédiats en partiel.`,
+          `Relisez attentivement la Section 2 avant les épreuves pour éviter les pièges terminologiques.`
+        ]
+      }
     };
   },
 

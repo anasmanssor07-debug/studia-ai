@@ -14,7 +14,10 @@ import {
   Square,
   Globe,
   Crown,
-  Camera
+  Camera,
+  Lock,
+  ShieldCheck,
+  AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
@@ -45,6 +48,14 @@ export const MobileShell: React.FC = () => {
   const [navExtra, setNavExtra] = useState<any>(null);
   const [showAvatarPicker, setShowAvatarPicker] = useState<boolean>(false);
 
+  // Admin PIN Protection (Code: 121107)
+  const [isAdminUnlocked, setIsAdminUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('studia_admin_unlocked') === 'true';
+  });
+  const [showAdminPasscodeModal, setShowAdminPasscodeModal] = useState<boolean>(false);
+  const [adminPasscode, setAdminPasscode] = useState<string>('');
+  const [adminPasscodeError, setAdminPasscodeError] = useState<string | null>(null);
+
   // Dynamic screen format: adaptive (default) | phone | fullscreen
   const [screenMode, setScreenMode] = useState<ScreenFormatMode>(() => {
     const saved = localStorage.getItem('studia_screen_mode') as ScreenFormatMode;
@@ -57,6 +68,12 @@ export const MobileShell: React.FC = () => {
   };
 
   const handleNavigate = (tab: string, extra?: any) => {
+    if (tab === 'admin' && !isAdminUnlocked) {
+      setAdminPasscode('');
+      setAdminPasscodeError(null);
+      setShowAdminPasscodeModal(true);
+      return;
+    }
     setActiveTab(tab);
     setNavExtra(extra || null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -71,13 +88,13 @@ export const MobileShell: React.FC = () => {
   // Determine container styling based on chosen format mode
   const getContainerClasses = () => {
     if (screenMode === 'phone') {
-      return 'max-w-[420px] min-h-[100vh] md:min-h-[860px] md:max-h-[900px] md:rounded-[44px] md:border-[10px] md:border-slate-800 md:shadow-2xl';
+      return 'max-w-[420px] h-[100dvh] md:h-[880px] md:rounded-[44px] md:border-[10px] md:border-slate-800 md:shadow-2xl';
     }
     if (screenMode === 'fullscreen') {
-      return 'w-full min-h-screen rounded-none shadow-none';
+      return 'w-full h-[100dvh] rounded-none shadow-none';
     }
-    // Adaptive: automatically fills screen cleanly (max-w-5xl on desktop, full on mobile)
-    return 'w-full max-w-5xl min-h-screen md:min-h-[92vh] md:my-auto md:rounded-3xl shadow-xl border border-slate-200/80';
+    // Adaptive: fits viewport height with stable sticky bottom bar and scrollable content
+    return 'w-full max-w-5xl h-[100dvh] md:h-[92vh] md:my-auto md:rounded-3xl shadow-xl border border-slate-200/80';
   };
 
   return (
@@ -266,8 +283,8 @@ export const MobileShell: React.FC = () => {
           </div>
         )}
 
-        {/* Scrollable View Content */}
-        <main className="flex-1 overflow-y-auto px-4 md:px-6 pt-4 pb-24">
+        {/* Scrollable View Content with ample clearance for bottom navbar */}
+        <main className="flex-1 overflow-y-auto px-4 md:px-6 pt-4 pb-28 md:pb-24">
           {activeTab === 'home' && <HomeDashboard onNavigate={handleNavigate} />}
           {activeTab === 'courses' && (
             <CoursesView 
@@ -282,7 +299,7 @@ export const MobileShell: React.FC = () => {
               initialDocumentId={navExtra?.documentId} 
             />
           )}
-          {activeTab === 'quiz' && (
+          {(activeTab === 'quiz' || activeTab === 'studytools') && (
             <QuizAndFlashcardsView 
               initialCourseId={navExtra?.courseId} 
               initialSubtab={navExtra?.subtab} 
@@ -293,11 +310,11 @@ export const MobileShell: React.FC = () => {
           {activeTab === 'admin' && <AdminDashboardView />}
         </main>
 
-        {/* Sticky Bottom Navigation Bar */}
-        <nav className="absolute bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-2 flex items-center justify-around z-30 pb-safe shadow-lg">
+        {/* Fixed/Sticky Bottom Navigation Bar - Stays pinned at bottom while scrolling */}
+        <nav className="sticky bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-2 py-2 flex items-center justify-around z-40 pb-safe shadow-[0_-4px_20px_rgba(0,0,0,0.06)] shrink-0">
           <button
             onClick={() => handleNavigate('home')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
+            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all cursor-pointer ${
               activeTab === 'home'
                 ? 'text-blue-600 font-extrabold scale-105'
                 : 'text-slate-500 hover:text-slate-800 font-medium'
@@ -309,7 +326,7 @@ export const MobileShell: React.FC = () => {
 
           <button
             onClick={() => handleNavigate('courses')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
+            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all cursor-pointer ${
               activeTab === 'courses'
                 ? 'text-blue-600 font-extrabold scale-105'
                 : 'text-slate-500 hover:text-slate-800 font-medium'
@@ -322,7 +339,7 @@ export const MobileShell: React.FC = () => {
           {/* AI Assistant Tab */}
           <button
             onClick={() => handleNavigate('assistant')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
+            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all cursor-pointer ${
               activeTab === 'assistant'
                 ? 'text-purple-600 font-extrabold scale-105'
                 : 'text-slate-500 hover:text-slate-800 font-medium'
@@ -334,7 +351,7 @@ export const MobileShell: React.FC = () => {
 
           <button
             onClick={() => handleNavigate('quiz')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
+            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all cursor-pointer ${
               activeTab === 'quiz'
                 ? 'text-blue-600 font-extrabold scale-105'
                 : 'text-slate-500 hover:text-slate-800 font-medium'
@@ -346,7 +363,7 @@ export const MobileShell: React.FC = () => {
 
           <button
             onClick={() => handleNavigate('planner')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
+            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all cursor-pointer ${
               activeTab === 'planner'
                 ? 'text-blue-600 font-extrabold scale-105'
                 : 'text-slate-500 hover:text-slate-800 font-medium'
@@ -358,7 +375,7 @@ export const MobileShell: React.FC = () => {
 
           <button
             onClick={() => handleNavigate('profile')}
-            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all ${
+            className={`flex flex-col items-center py-1 px-3 rounded-xl transition-all cursor-pointer ${
               activeTab === 'profile'
                 ? 'text-blue-600 font-extrabold scale-105'
                 : 'text-slate-500 hover:text-slate-800 font-medium'
@@ -376,6 +393,78 @@ export const MobileShell: React.FC = () => {
           isOpen={showAvatarPicker}
           onClose={() => setShowAvatarPicker(false)}
         />
+
+        {/* Admin Passcode Protection Modal (Required Code: 121107) */}
+        {showAdminPasscodeModal && (
+          <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-100 flex flex-col text-slate-800 animate-in fade-in zoom-in-95 duration-200">
+              <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto mb-3">
+                <Lock className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-black text-center text-slate-900">Accès Administrateur Sécurisé</h3>
+              <p className="text-xs text-slate-500 text-center mt-1">
+                Veuillez saisir le code de sécurité requis pour accéder à l'administration STUDIA AI.
+              </p>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (adminPasscode.trim() === '121107') {
+                    sessionStorage.setItem('studia_admin_unlocked', 'true');
+                    setIsAdminUnlocked(true);
+                    setShowAdminPasscodeModal(false);
+                    setActiveTab('admin');
+                  } else {
+                    setAdminPasscodeError('Code d’accès incorrect (Code requis : 121107)');
+                  }
+                }}
+                className="mt-5 space-y-4"
+              >
+                <div>
+                  <label className="text-[11px] font-bold text-slate-600 block mb-1">Code PIN de sécurité</label>
+                  <input
+                    type="password"
+                    autoFocus
+                    maxLength={10}
+                    value={adminPasscode}
+                    onChange={(e) => {
+                      setAdminPasscode(e.target.value);
+                      setAdminPasscodeError(null);
+                    }}
+                    placeholder="Entrez 121107"
+                    className="w-full text-center text-xl tracking-widest font-black py-2.5 px-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                  />
+                  {adminPasscodeError && (
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-red-600 font-semibold mt-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{adminPasscodeError}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowAdminPasscodeModal(false);
+                      setAdminPasscode('');
+                      setAdminPasscodeError(null);
+                    }}
+                    className="flex-1 py-2.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 text-xs font-extrabold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-md transition-all cursor-pointer"
+                  >
+                    Déverrouiller
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

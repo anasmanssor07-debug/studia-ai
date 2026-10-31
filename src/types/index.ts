@@ -30,7 +30,34 @@ export type SubscriptionStatus =
   | 'cancelled' 
   | 'expired';
 
-export type SubscriptionTier = 'free_trial' | 'free_expired' | 'premium' | 'gold';
+export type SubscriptionTier = 'free_trial' | 'free_plan' | 'free_expired' | 'premium' | 'gold';
+
+export interface UserUsageLimits {
+  tier: SubscriptionTier;
+  isTrialActive: boolean;
+  trialHoursRemaining: number;
+  isTrialExpired: boolean;
+  isPremium: boolean;
+  aiQuestions: {
+    usedToday: number;
+    limit: number;
+    remainingToday: number;
+    resetsAt: string;
+  };
+  summaries: {
+    usedThisMonth: number;
+    limit: number;
+    remainingThisMonth: number;
+    resetsAt: string;
+  };
+  quizzes: {
+    usedToday: number;
+    maxQuestionsPerQuiz: number;
+    isAdvancedAllowed: boolean;
+  };
+  canGenerateStudyPlan: boolean;
+  canGenerateExamSimulation: boolean;
+}
 
 export interface PaymentTransaction {
   id: string;
@@ -53,7 +80,7 @@ export interface PaymentTransaction {
 export interface UserSubscription {
   tier: SubscriptionTier;
   status: SubscriptionStatus;
-  planId?: 'premium' | 'free_trial' | 'gold';
+  planId?: 'premium' | 'free_trial' | 'free_plan' | 'gold';
   trialStartedAt?: string;
   trialExpiresAt?: string;
   isTrialActive: boolean;
@@ -180,10 +207,36 @@ export interface Flashcard {
   topic: string;
   question: string;
   answer: string;
+  front?: string; // Question, concept, or key term
+  back?: string;  // Correct answer + clear explanation
+  concept?: string;
+  explanation?: string;
   box: number; // Leitner box (1 to 5)
   nextReviewDate: string;
   timesReviewed: number;
   timesCorrect: number;
+}
+
+export interface AcademicSummarySection {
+  sectionNumber: number;
+  title: string;
+  content: string;
+  subsections?: Array<{ title: string; content: string }>;
+  definitions?: Array<{ term: string; definition: string }>;
+  keyPoints?: string[];
+}
+
+export interface AcademicSummaryResult {
+  title: string;
+  courseName?: string;
+  topic?: string;
+  academicSummaryText: string;
+  summary?: string;
+  sections?: AcademicSummarySection[];
+  definitions?: Array<{ term: string; definition: string }>;
+  keyTakeaways?: string[];
+  examTips?: string[];
+  recommendedNextStep?: string;
 }
 
 export interface StudySessionTask {

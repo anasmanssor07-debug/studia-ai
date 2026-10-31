@@ -8,7 +8,8 @@ import type {
   ExamCountdown, 
   PracticeExam, 
   WeeklyStudyMetric,
-  Achievement
+  Achievement,
+  UserUsageLimits
 } from '../types/index.ts';
 import { localClientStorage } from './localClientStorage.ts';
 
@@ -286,6 +287,8 @@ export const api = {
 
   async generateSummary(params: {
     courseId?: string;
+    courseName?: string;
+    topic?: string;
     documentId?: string;
     chapterTitle?: string;
     rawText?: string;
@@ -329,6 +332,9 @@ export const api = {
 
   async generateFlashcards(params: {
     courseId?: string;
+    courseName?: string;
+    topic?: string;
+    rawText?: string;
     count?: number;
     language?: string;
   }): Promise<{ flashcards: Flashcard[] }> {
@@ -580,6 +586,19 @@ export const api = {
     } catch {
       isStaticDeployment = true;
       return localClientStorage.getSubscriptionStatus();
+    }
+  },
+
+  async getUserUsage(): Promise<{ usage: UserUsageLimits; subscription: any }> {
+    if (isStaticDeployment) return localClientStorage.getUserUsage();
+    try {
+      const res = await fetch(`${API_BASE}/user/usage`, {
+        headers: { ...getAuthHeader() },
+      });
+      return await handleResponse(res, () => localClientStorage.getUserUsage());
+    } catch {
+      isStaticDeployment = true;
+      return localClientStorage.getUserUsage();
     }
   },
 

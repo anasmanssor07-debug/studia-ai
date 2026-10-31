@@ -19,7 +19,7 @@ const translations: Record<Language, Record<string, string>> = {
     navHome: 'Accueil',
     navCourses: 'Mes Cours',
     navAssistant: 'Assistant IA',
-    navQuiz: 'Quiz & Cartes',
+    navQuiz: 'Outils IA',
     navPlanner: 'Planning',
     navProfile: 'Profil',
 
@@ -122,7 +122,7 @@ const translations: Record<Language, Record<string, string>> = {
     navHome: 'Home',
     navCourses: 'My Courses',
     navAssistant: 'AI Assistant',
-    navQuiz: 'Quiz & Cards',
+    navQuiz: 'AI Tools',
     navPlanner: 'Planner',
     navProfile: 'Profile',
 
@@ -225,7 +225,7 @@ const translations: Record<Language, Record<string, string>> = {
     navHome: 'الرئيسية',
     navCourses: 'مقرراتي',
     navAssistant: 'المساعد الذكي',
-    navQuiz: 'كويز وبطاقات',
+    navQuiz: 'أدوات الذكاء',
     navPlanner: 'الجدول',
     navProfile: 'حسابي',
 

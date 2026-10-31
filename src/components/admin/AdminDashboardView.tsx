@@ -19,7 +19,15 @@ import {
 import { api } from '../../services/api.ts';
 import type { AdminMetrics, AdminConfig, PaymentTransaction } from '../../types/index.ts';
 
+import { Lock, AlertCircle } from 'lucide-react';
+
 export const AdminDashboardView: React.FC = () => {
+  const [isUnlocked, setIsUnlocked] = useState<boolean>(() => {
+    return sessionStorage.getItem('studia_admin_unlocked') === 'true';
+  });
+  const [pinInput, setPinInput] = useState<string>('');
+  const [pinError, setPinError] = useState<string | null>(null);
+
   const [loading, setLoading] = useState<boolean>(true);
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [config, setConfig] = useState<AdminConfig | null>(null);
@@ -56,8 +64,67 @@ export const AdminDashboardView: React.FC = () => {
   };
 
   useEffect(() => {
-    fetchAdminData();
-  }, []);
+    if (isUnlocked) {
+      fetchAdminData();
+    }
+  }, [isUnlocked]);
+
+  if (!isUnlocked) {
+    return (
+      <div className="min-h-[70vh] flex items-center justify-center p-4">
+        <div className="bg-white rounded-3xl max-w-sm w-full p-8 shadow-xl border border-slate-200 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto mb-4">
+            <Lock className="w-7 h-7" />
+          </div>
+          <h2 className="text-xl font-black text-slate-900">Administration Protégée</h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Entrez le code de sécurité requis pour accéder à la supervision et aux métriques Payzone.
+          </p>
+
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (pinInput.trim() === '121107') {
+                sessionStorage.setItem('studia_admin_unlocked', 'true');
+                setIsUnlocked(true);
+              } else {
+                setPinError('Code d’accès incorrect (Code requis : 121107)');
+              }
+            }}
+            className="mt-6 space-y-4"
+          >
+            <div>
+              <input
+                type="password"
+                autoFocus
+                maxLength={10}
+                value={pinInput}
+                onChange={(e) => {
+                  setPinInput(e.target.value);
+                  setPinError(null);
+                }}
+                placeholder="Entrez 121107"
+                className="w-full text-center text-2xl tracking-widest font-black py-3 px-4 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+              />
+              {pinError && (
+                <div className="flex items-center justify-center gap-1.5 text-xs text-red-600 font-semibold mt-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{pinError}</span>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-3 text-sm font-extrabold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-md transition-all cursor-pointer"
+            >
+              Déverrouiller l'accès
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
 
   const handleSaveConfig = async (e: React.FormEvent) => {
     e.preventDefault();

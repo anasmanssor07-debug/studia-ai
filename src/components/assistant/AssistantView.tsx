@@ -10,12 +10,15 @@ import {
   Lightbulb, 
   AlertCircle,
   HelpCircle,
-  RefreshCw
+  RefreshCw,
+  Crown,
+  Zap,
+  Clock
 } from 'lucide-react';
 import { api } from '../../services/api.ts';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
-import type { Course, CourseDocument, ChatMessage } from '../../types/index.ts';
+import type { Course, CourseDocument, ChatMessage, UserUsageLimits } from '../../types/index.ts';
 
 interface AssistantViewProps {
   initialCourseId?: string;
@@ -31,6 +34,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ initialCourseId, i
   const [selectedDocId, setSelectedDocId] = useState<string>(initialDocumentId || '');
   const [inputMessage, setInputMessage] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
+  const [usage, setUsage] = useState<UserUsageLimits | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'welcome-msg',
@@ -44,7 +48,16 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ initialCourseId, i
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const fetchUsage = () => {
+    api.getUserUsage().then((res) => {
+      if (res && res.usage) {
+        setUsage(res.usage);
+      }
+    }).catch(console.error);
+  };
+
   useEffect(() => {
+    fetchUsage();
     api.getCourses().then((res) => {
       setCourses(res.courses);
       if (!selectedCourseId && res.courses.length > 0) {
@@ -92,9 +105,10 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ initialCourseId, i
       };
 
       setMessages((prev) => [...prev, aiMsg]);
+      fetchUsage();
     } catch (err: any) {
-      if (err.message && err.message.includes('expiré')) {
-        setShowSubscriptionModal(true);
+      if (err.message && (err.message.includes('expiré') || err.message.includes('Limite quotidienne'))) {
+        fetchUsage();
       }
       setMessages((prev) => [
         ...prev,
@@ -114,8 +128,60 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ initialCourseId, i
     handleSendMessage(promptText);
   };
 
+  const isFreePlanQuestionLimitReached = Boolean(
+    usage && !usage.isPremium && !usage.isTrialActive && usage.aiQuestions.remainingToday <= 0
+  );
+
   return (
     <div className="flex flex-col h-[calc(100vh-140px)] max-h-[720px] bg-white rounded-3xl border border-slate-100 shadow-xs overflow-hidden">
+      {/* Real-time Usage Limits Banner */}
+      {usage && !usage.isPremium && (
+        <div className="px-3.5 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 border-b border-blue-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center gap-1.5 font-semibold text-slate-700">
+            <Zap className="w-4 h-4 text-amber-500 fill-amber-500 shrink-0" />
+            <span>
+              {usage.tier === 'free_trial' && usage.isTrialActive ? (
+                <>Essai Découverte : <strong className="text-blue-700">{usage.trialHoursRemaining}h restantes</strong></>
+              ) : (
+                <>
+                  Plan Gratuit : <strong className={usage.aiQuestions.remainingToday > 0 ? "text-blue-700" : "text-red-600 font-black"}>
+                    {usage.aiQuestions.remainingToday}/{usage.aiQuestions.limit} questions restantes aujourd'hui
+                  </strong> (réinitialisation à minuit)
+                </>
+              )}
+            </span>
+          </div>
+
+          <button
+            onClick={() => setShowSubscriptionModal(true)}
+            className="flex items-center gap-1 py-1 px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] shadow-xs cursor-pointer transition-all active:scale-95"
+          >
+            <Crown className="w-3 h-3 text-amber-300 fill-amber-300" />
+            <span>Passer à Premium (40 MAD)</span>
+          </button>
+        </div>
+      )}
+
+      {/* Limit Reached Warning if 0 questions remaining today on Free Plan */}
+      {isFreePlanQuestionLimitReached && (
+        <div className="m-3 p-3 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-2.5 text-xs text-red-800">
+          <AlertCircle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-bold text-red-900">Limite quotidienne de 5 questions atteinte</p>
+            <p className="text-[11px] text-red-700 mt-0.5">
+              Vos 5 questions gratuites seront réinitialisées à minuit (00:00). Pour continuer vos révisions sans limite, passez à STUDIA AI Premium (40 MAD/mois).
+            </p>
+            <button
+              onClick={() => setShowSubscriptionModal(true)}
+              className="mt-2 py-1 px-3 bg-red-600 hover:bg-red-700 text-white font-black text-xs rounded-lg transition-colors cursor-pointer flex items-center gap-1"
+            >
+              <Crown className="w-3.5 h-3.5 text-amber-300" />
+              <span>Débloquer les questions illimitées</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Top Context Selector */}
       <div className="p-3 bg-slate-50 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex items-center gap-1.5 flex-1 min-w-[200px]">
@@ -242,25 +308,45 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ initialCourseId, i
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (isFreePlanQuestionLimitReached) {
+            setShowSubscriptionModal(true);
+            return;
+          }
           handleSendMessage();
         }}
         className="p-3 bg-white border-t border-slate-100 flex items-center gap-2"
       >
         <input
           type="text"
+          disabled={isFreePlanQuestionLimitReached}
           value={inputMessage}
           onChange={(e) => setInputMessage(e.target.value)}
-          placeholder={t('typeMessage')}
-          className="flex-1 py-2.5 px-3.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none focus:bg-white transition-all"
+          placeholder={
+            isFreePlanQuestionLimitReached 
+              ? "Limite quotidienne de 5 questions atteinte (réinitialisation à minuit)" 
+              : t('typeMessage')
+          }
+          className="flex-1 py-2.5 px-3.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none focus:bg-white transition-all disabled:opacity-60 disabled:cursor-not-allowed"
         />
 
-        <button
-          type="submit"
-          disabled={!inputMessage.trim() || loading}
-          className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl shadow-sm transition-all active:scale-95 shrink-0"
-        >
-          <Send className="w-4 h-4" />
-        </button>
+        {isFreePlanQuestionLimitReached ? (
+          <button
+            type="button"
+            onClick={() => setShowSubscriptionModal(true)}
+            className="py-2.5 px-3.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all active:scale-95 shrink-0 flex items-center gap-1 cursor-pointer"
+          >
+            <Crown className="w-3.5 h-3.5 text-amber-300" />
+            <span>Passer à Premium</span>
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={!inputMessage.trim() || loading}
+            className="p-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white rounded-xl shadow-sm transition-all active:scale-95 shrink-0 cursor-pointer"
+          >
+            <Send className="w-4 h-4" />
+          </button>
+        )}
       </form>
     </div>
   );

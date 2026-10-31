@@ -19,7 +19,8 @@ import type {
   PaymentTransaction,
   SubscriptionStatus,
   AdminMetrics,
-  AdminConfig
+  AdminConfig,
+  UserUsageLimits
 } from './src/types/index.ts';
 
 dotenv.config();
@@ -254,17 +255,66 @@ function getAuthUser(req: express.Request): UserProfile | null {
   return db.users.get(demoUserId) || null;
 }
 
+interface StoredUserUsage {
+  userId: string;
+  questionsToday: number;
+  lastQuestionDate: string; // YYYY-MM-DD
+  summariesThisMonth: number;
+  lastSummaryMonth: string; // YYYY-MM
+  quizzesToday: number;
+  lastQuizDate: string; // YYYY-MM-DD
+}
+
+// Helper to get or reset daily/monthly usage statistics
+export function getUserUsage(userId: string): StoredUserUsage {
+  const todayStr = new Date().toISOString().split('T')[0];
+  const thisMonthStr = new Date().toISOString().slice(0, 7);
+
+  let usage = db.usageStats.get(userId) as StoredUserUsage | undefined;
+  if (!usage) {
+    usage = {
+      userId,
+      questionsToday: 0,
+      lastQuestionDate: todayStr,
+      summariesThisMonth: 0,
+      lastSummaryMonth: thisMonthStr,
+      quizzesToday: 0,
+      lastQuizDate: todayStr,
+    };
+    db.usageStats.set(userId, usage);
+  }
+
+  // Daily reset at midnight (00:00)
+  if (usage.lastQuestionDate !== todayStr) {
+    usage.questionsToday = 0;
+    usage.lastQuestionDate = todayStr;
+  }
+  if (usage.lastQuizDate !== todayStr) {
+    usage.quizzesToday = 0;
+    usage.lastQuizDate = todayStr;
+  }
+
+  // Monthly reset on 1st of calendar month
+  if (usage.lastSummaryMonth !== thisMonthStr) {
+    usage.summariesThisMonth = 0;
+    usage.lastSummaryMonth = thisMonthStr;
+  }
+
+  return usage;
+}
+
 // Check subscription active status with server-side enforcement
 export function checkSubscription(user: UserProfile): { 
   isAllowed: boolean; 
   tier: string; 
   status: SubscriptionStatus; 
   reason?: string; 
+  isFreePlan?: boolean;
 } {
   const sub = user.subscription;
 
   // 1. Explicit Active Status (Paid Premium 40 MAD or Gold)
-  if (sub.status === 'active') {
+  if (sub.status === 'active' && (sub.tier === 'premium' || sub.tier === 'gold')) {
     if (sub.currentPeriodEnd) {
       const periodEnd = new Date(sub.currentPeriodEnd).getTime();
       if (Date.now() > periodEnd) {
@@ -304,21 +354,29 @@ export function checkSubscription(user: UserProfile): {
     if (sub.trialExpiresAt) {
       const expires = new Date(sub.trialExpiresAt).getTime();
       if (Date.now() > expires) {
-        sub.tier = 'free_expired';
-        sub.status = 'expired';
+        // Automatically change user's access level to the Free Plan without deleting account or course data!
+        sub.tier = 'free_plan';
         sub.isTrialActive = false;
+        sub.status = 'active';
+        sub.planName = 'Plan Gratuit';
         return { 
-          isAllowed: false, 
-          tier: 'free_expired', 
-          status: 'expired',
-          reason: 'Votre période d’essai gratuit de 48 heures est expirée. Passez à l’offre Premium (40 MAD/mois) pour continuer à utiliser l’IA.' 
+          isAllowed: true, 
+          tier: 'free_plan', 
+          status: 'active',
+          isFreePlan: true,
+          reason: 'Votre essai gratuit de 48 heures est terminé. Vous bénéficiez désormais du Plan Gratuit permanent.' 
         };
       }
     }
     return { isAllowed: true, tier: 'free_trial', status: sub.status || 'active' };
   }
 
-  // 4. Payment Failed
+  // 4. Permanent Free Plan
+  if (sub.tier === 'free_plan' && sub.status !== 'inactive' && sub.status !== 'payment_failed') {
+    return { isAllowed: true, tier: 'free_plan', status: 'active', isFreePlan: true };
+  }
+
+  // 5. Payment Failed
   if (sub.status === 'payment_failed') {
     return {
       isAllowed: false,
@@ -328,7 +386,7 @@ export function checkSubscription(user: UserProfile): {
     };
   }
 
-  // 5. Inactive or Pending Payment
+  // 6. Inactive or Pending Payment
   return { 
     isAllowed: false, 
     tier: 'free_expired', 
@@ -769,13 +827,10 @@ function cleanGeminiJson(raw: string): string {
 
 // Resilient AI caller with fallback for 503 high demand spikes and optimized speed
 async function callGeminiWithFallback(params: { contents: any; config?: any }): Promise<string> {
-  const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+  const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
   let lastErr: any = null;
 
   const mergedConfig = {
-    thinkingConfig: {
-      thinkingLevel: ThinkingLevel.LOW,
-    },
     ...params.config,
   };
 
@@ -804,6 +859,36 @@ app.post('/api/ai/assistant', async (req, res) => {
   const subCheck = checkSubscription(user);
   if (!subCheck.isAllowed) {
     return res.status(403).json({ error: subCheck.reason, subscriptionExpired: true });
+  }
+
+  const sub = user.subscription;
+  const isFreePlan = sub.tier === 'free_plan' || subCheck.isFreePlan;
+  const usage = getUserUsage(user.id);
+
+  // Free Plan: 5 AI questions per day (resets at midnight)
+  if (isFreePlan) {
+    const dailyLimit = 5;
+    if (usage.questionsToday >= dailyLimit) {
+      return res.status(403).json({
+        error: "Limite quotidienne atteinte (5/5 questions utilisées aujourd'hui). Vos 5 questions gratuites seront réinitialisées à minuit (00:00). Passez à l'offre Premium (40 MAD/mois) pour un accès illimité.",
+        limitReached: true,
+        feature: 'assistant',
+        limit: dailyLimit,
+        used: usage.questionsToday,
+        remaining: 0,
+        resetsAt: 'minuit (00:00)',
+      });
+    }
+  } else {
+    const dailySafetyLimit = db.adminConfig.aiDailyLimit || 100;
+    if (usage.questionsToday >= dailySafetyLimit) {
+      return res.status(403).json({
+        error: `Limite journalière de sécurité atteinte (${dailySafetyLimit} questions/jour). Réinitialisation à minuit.`,
+        limitReached: true,
+        feature: 'assistant',
+        remaining: 0,
+      });
+    }
   }
 
   const { message, courseId, documentId, targetLanguage = 'fr' } = req.body;
@@ -870,14 +955,28 @@ RÈGLES IMPORTANTES :
     // Award learning XP
     user.totalXp += 10;
 
-    return res.json({ reply, sourceDocTitle: sourceDocTitle || null });
+    // Track usage
+    usage.questionsToday += 1;
+    const currentLimit = isFreePlan ? 5 : (db.adminConfig.aiDailyLimit || 100);
+    const remainingToday = Math.max(0, currentLimit - usage.questionsToday);
+
+    return res.json({ 
+      reply, 
+      sourceDocTitle: sourceDocTitle || null,
+      usage: {
+        usedToday: usage.questionsToday,
+        limit: currentLimit,
+        remainingToday,
+        isFreePlan: Boolean(isFreePlan),
+      }
+    });
   } catch (err: any) {
     console.error('Error calling Gemini Assistant:', err?.message || err);
     return res.status(500).json({ error: err?.message || 'Erreur lors de la génération de la réponse IA. Veuillez réessayer.' });
   }
 });
 
-// AI Course Summary Generator
+// AI Course Academic Summary Generator
 app.post('/api/ai/summarize', async (req, res) => {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Non authentifié.' });
@@ -887,48 +986,125 @@ app.post('/api/ai/summarize', async (req, res) => {
     return res.status(403).json({ error: subCheck.reason, subscriptionExpired: true });
   }
 
-  const { courseId, documentId, chapterTitle, rawText, language = 'fr' } = req.body;
+  const sub = user.subscription;
+  const isFreePlan = sub.tier === 'free_plan' || subCheck.isFreePlan;
+  const usage = getUserUsage(user.id);
+
+  // Free Plan: 3 AI summaries per month (resets on 1st of month)
+  if (isFreePlan) {
+    const monthlyLimit = 3;
+    if (usage.summariesThisMonth >= monthlyLimit) {
+      return res.status(403).json({
+        error: "Limite mensuelle atteinte (3/3 résumés générés ce mois-ci). Vos 3 résumés gratuits seront réinitialisés le 1er du mois prochain. Passez à STUDIA AI Premium (40 MAD/mois) pour des résumés illimités.",
+        limitReached: true,
+        feature: 'summarize',
+        limit: monthlyLimit,
+        used: usage.summariesThisMonth,
+        remaining: 0,
+        resetsAt: '1er du mois',
+      });
+    }
+  } else {
+    const monthlySafetyLimit = db.adminConfig.summaryLimit || 50;
+    if (usage.summariesThisMonth >= monthlySafetyLimit) {
+      return res.status(403).json({
+        error: `Limite mensuelle de sécurité atteinte (${monthlySafetyLimit} résumés/mois).`,
+        limitReached: true,
+        feature: 'summarize',
+        remaining: 0,
+      });
+    }
+  }
+
+  const { courseId, documentId, courseName, topic, chapterTitle, rawText, language = 'fr' } = req.body;
 
   let textToSummarize = rawText || '';
-  let courseTitle = '';
+  let resolvedCourseName = courseName || '';
+  let resolvedTopic = topic || chapterTitle || '';
+
   if (courseId) {
     const userCourses = db.courses.get(user.id) || [];
     const course = userCourses.find((c) => c.id === courseId);
     if (course) {
-      courseTitle = course.title;
+      if (!resolvedCourseName) resolvedCourseName = course.title;
       if (documentId) {
         const doc = course.documents.find((d) => d.id === documentId);
-        if (doc) textToSummarize = doc.content;
-      } else if (course.documents.length > 0) {
+        if (doc) {
+          if (!textToSummarize) textToSummarize = doc.content;
+          if (!resolvedTopic) resolvedTopic = doc.title;
+        }
+      } else if (course.documents.length > 0 && !textToSummarize) {
         textToSummarize = course.documents.map((d) => `${d.title}:\n${d.content}`).join('\n\n');
       }
     }
   }
 
-  if (!textToSummarize) {
-    return res.status(400).json({ error: 'Aucun texte ou document fourni pour le résumé.' });
+  const finalCourseName = resolvedCourseName || 'Module universitaire';
+  const finalTopic = resolvedTopic || 'Notions Fondamentales';
+
+  if (!textToSummarize && !resolvedTopic) {
+    return res.status(400).json({ error: 'Veuillez saisir un sujet, un nom de cours ou coller le contenu du cours.' });
   }
 
   try {
-    const prompt = `Génère une fiche de révision complète et approfondie pour ce cours sous forme de texte riche avec des titres de sections et des définitions précises.
-Matière / Cours : ${courseTitle || 'Matière universitaire'}
-${chapterTitle ? `Chapitre visé : ${chapterTitle}` : ''}
-Langue : ${language}
+    const prompt = `Tu es STUDIA AI, professeur universitaire d'élite et concepteur pédagogique de haut niveau.
+MISSION IMPÉRATIVE :
+Génère un résumé académique de haute qualité, clair, rigoureusement structuré et pédagogique pour l'étudiant.
 
-Contenu de référence :
+Nom du cours : ${finalCourseName}
+Sujet / Chapitre : ${finalTopic}
+Langue demandée : ${language}
+
+Contenu de cours fourni par l'étudiant :
 """
-${textToSummarize.slice(0, 20000)}
+${(textToSummarize || `Cours sur ${finalCourseName} portant sur ${finalTopic}`).slice(0, 25000)}
 """
 
-Formate le résultat en JSON avec la structure exacte suivante :
+RÈGLES DE STRUCTURE OBLIGATOIRES :
+1. TITLE : Titre clair et significatif au format "TITLE: [Nom du cours / Sujet]".
+2. SECTIONS NUMÉROTÉES : Découpe le cours en sections logiques (SECTION 1: ..., SECTION 2: ..., etc.).
+3. PARAGRAPHES EXPLICATIFS : Sous chaque titre de section, rédige des paragraphes explicatifs détaillés et bien rédigés.
+4. CONCEPTS & DÉFINITIONS : Présente les définitions formelles et termes essentiels sous forme claire (ex: "LAN: A Local Area Network connects...").
+5. POINTS CLÉS EN LANGAGE SIMPLE : Explique les notions complexes avec des mots simples, accessibles et compréhensibles pour un étudiant.
+6. ORGANISATION LOGIQUE : Du général vers le particulier, avec applications concrètes ou importance du domaine.
+
+Exemple type attendu pour "academicSummaryText" :
+TITLE: Introduction to Computer Networks
+
+SECTION 1: Definition of a Computer Network
+A computer network is a group of interconnected devices that communicate and exchange information using communication protocols.
+
+SECTION 2: Types of Networks
+LAN: A Local Area Network connects devices within a limited geographical area, such as a school or a building.
+WAN: A Wide Area Network connects devices across large geographical distances.
+
+SECTION 3: Importance of Computer Networks
+Computer networks allow users to share resources, exchange information, communicate efficiently, and access remote services.
+
+Format JSON attendu :
 {
-  "title": "Titre officiel de la fiche de révision",
-  "summary": "Résumé sous forme de texte riche structuré avec des titres de sections (## 1. Vue d'Ensemble, ## 2. Définitions Fondamentales du Support, ## 3. Formules & Théorèmes Clés, ## 4. Analyse des Chapitres, ## 5. Astuces d'Examen) détaillant exhaustivement chaque notion et définition du document sans rien omettre",
-  "keyConcepts": ["Concept 1 avec définition courte", "Concept 2", "Concept 3"],
-  "definitions": [{"term": "Terme figurant dans le document", "definition": "Définition complète et rigoureuse issue du texte"}],
-  "formulasOrTheorems": ["Formule, théorème ou loi avec explication des hypothèses et variables"],
-  "examTips": ["Piège classique à éviter à l'examen", "Conseil de révision"],
-  "recommendedNextStep": "Recommandation concrète pour la suite"
+  "title": "TITLE: ${finalCourseName} - ${finalTopic}",
+  "academicSummaryText": "Le texte complet formaté exactement avec TITLE:, SECTION 1:, SECTION 2:, etc., et paragraphes explicatifs",
+  "summary": "Version structurée avec titres et explications",
+  "sections": [
+    {
+      "sectionNumber": 1,
+      "title": "Titre explicite de la section 1",
+      "content": "Paragraphe explicatif détaillé de la section 1",
+      "definitions": [{ "term": "Terme clé", "definition": "Définition rigoureuse" }],
+      "keyPoints": ["Point clé expliqué simplement 1", "Point clé 2"]
+    }
+  ],
+  "definitions": [
+    { "term": "Terme 1", "definition": "Définition simple et précise" }
+  ],
+  "keyTakeaways": [
+    "Point essentiel 1 expliqué simplement",
+    "Point essentiel 2..."
+  ],
+  "examTips": [
+    "Conseil clé ou piège classique d'examen"
+  ]
 }`;
 
     const replyText = await callGeminiWithFallback({
@@ -941,7 +1117,20 @@ Formate le résultat en JSON avec la structure exacte suivante :
     const parsed = JSON.parse(cleanGeminiJson(replyText || '{}'));
     user.totalXp += 20;
 
-    return res.json({ result: parsed });
+    // Track usage
+    usage.summariesThisMonth += 1;
+    const currentLimit = isFreePlan ? 3 : (db.adminConfig.summaryLimit || 50);
+    const remainingThisMonth = Math.max(0, currentLimit - usage.summariesThisMonth);
+
+    return res.json({ 
+      result: parsed,
+      usage: {
+        usedThisMonth: usage.summariesThisMonth,
+        limit: currentLimit,
+        remainingThisMonth,
+        isFreePlan: Boolean(isFreePlan),
+      }
+    });
   } catch (err: any) {
     console.error('Error generating summary:', err);
     return res.status(500).json({ error: 'Erreur lors de la génération de la fiche de révision.' });
@@ -958,7 +1147,12 @@ app.post('/api/ai/quiz-generate', async (req, res) => {
     return res.status(403).json({ error: subCheck.reason, subscriptionExpired: true });
   }
 
-  const { 
+  const sub = user.subscription;
+  const isFreePlan = sub.tier === 'free_plan' || subCheck.isFreePlan;
+  const usage = getUserUsage(user.id);
+  usage.quizzesToday += 1;
+
+  let { 
     courseId, 
     topic, 
     questionCount = 5, 
@@ -966,6 +1160,13 @@ app.post('/api/ai/quiz-generate', async (req, res) => {
     questionType = 'multiple_choice',
     language = 'fr' 
   } = req.body;
+
+  // On Free Plan: Allow basic quizzes with up to 5 questions per quiz
+  if (isFreePlan) {
+    if (Number(questionCount) > 5) {
+      questionCount = 5;
+    }
+  }
 
   let courseContext = '';
   let courseTitle = topic || 'Cours général';
@@ -1059,7 +1260,7 @@ Réponds obligatoirement au format JSON suivant :
   }
 });
 
-// AI Flashcards Generator (Spaced Repetition)
+// AI Flashcards Generator (Spaced Repetition & High-Impact Study Cards)
 app.post('/api/ai/flashcards-generate', async (req, res) => {
   const user = getAuthUser(req);
   if (!user) return res.status(401).json({ error: 'Non authentifié.' });
@@ -1069,25 +1270,45 @@ app.post('/api/ai/flashcards-generate', async (req, res) => {
     return res.status(403).json({ error: subCheck.reason, subscriptionExpired: true });
   }
 
-  const { courseId, count = 6, language = 'fr' } = req.body;
+  const { courseId, courseName, topic, rawText, count = 5, language = 'fr' } = req.body;
   const userCourses = db.courses.get(user.id) || [];
   const course = userCourses.find((c) => c.id === courseId);
-  const courseTitle = course ? course.title : 'Révision';
-  const docContent = course?.documents?.map((d) => d.content).join('\n').slice(0, 8000) || '';
+  const resolvedCourseTitle = courseName || course?.title || 'Notions Fondamentales';
+  const resolvedTopic = topic || 'Concepts Clés';
+
+  let docContent = rawText || '';
+  if (!docContent && course) {
+    docContent = course.documents?.map((d) => d.content).join('\n').slice(0, 12000) || '';
+  }
 
   try {
-    const prompt = `Génère ${count} cartes mémoire (flashcards) d'apprentissage efficace pour le cours "${courseTitle}".
-Langue : ${language}.
-Chaque carte doit poser une question ciblée ou demander la définition d'un concept crucial, et fournir une réponse concise et mémorable.
-${docContent ? `Matériel de cours :\n${docContent}` : ''}
+    const prompt = `Tu es STUDIA AI, expert en mémorisation active et créateur de flashcards universitaires d'élite.
+MISSION :
+Génère exactement ${count} flashcards de haute qualité basées sur le contenu de cours ci-dessous.
+
+Cours : ${resolvedCourseTitle}
+Sujet : ${resolvedTopic}
+Langue : ${language}
+
+Matériel de cours :
+"""
+${(docContent || `Concepts de ${resolvedCourseTitle} portant sur ${resolvedTopic}`).slice(0, 15000)}
+"""
+
+RÈGLES IMPÉRATIVES POUR CHAQUE CARTE :
+- FRONT : Une question claire, un concept clé ou un terme précis (ex: "Qu'est-ce qu'un réseau local (LAN) ?").
+- BACK : La réponse exacte accompagnée obligatoirement d'une EXPLICATION PÉDAGOGIQUE CLAIRE et simple (ex: "Un réseau qui relie des équipements sur une zone restreinte comme un bâtiment. Explication : Il offre de très hauts débits et facilite le partage immédiat de ressources locales.").
+- Assure une progression logique : définitions clés, mécanismes, cas concrets, pièges à éviter.
 
 Format JSON requis :
 {
   "flashcards": [
     {
-      "topic": "Sujet ou sous-chapitre",
-      "question": "Question claire",
-      "answer": "Réponse synthétique et exacte"
+      "front": "Question, concept ou terme clé précis",
+      "back": "Réponse exacte et explication claire",
+      "concept": "Terme central de la carte",
+      "topic": "${resolvedTopic}",
+      "explanation": "Explication pédagogique détaillée"
     }
   ]
 }`;
@@ -1100,18 +1321,26 @@ Format JSON requis :
     });
 
     const parsed = JSON.parse(cleanGeminiJson(replyText || '{}'));
-    const cards = (parsed.flashcards || []).map((card: any, idx: number) => ({
-      id: `fc-${Date.now()}-${idx}`,
-      courseId: courseId || 'general',
-      courseTitle: courseTitle,
-      topic: card.topic || 'Concept clé',
-      question: card.question,
-      answer: card.answer,
-      box: 1,
-      nextReviewDate: new Date().toISOString(),
-      timesReviewed: 0,
-      timesCorrect: 0,
-    }));
+    const cards = (parsed.flashcards || []).map((card: any, idx: number) => {
+      const frontText = card.front || card.question || `Concept ${idx + 1}`;
+      const backText = card.back || card.answer || 'Explication issue du cours.';
+      return {
+        id: `fc-${Date.now()}-${idx}`,
+        courseId: courseId || 'general',
+        courseTitle: resolvedCourseTitle,
+        topic: card.topic || resolvedTopic,
+        front: frontText,
+        back: backText,
+        question: frontText,
+        answer: backText,
+        concept: card.concept || card.topic || resolvedTopic,
+        explanation: card.explanation || backText,
+        box: 1,
+        nextReviewDate: new Date().toISOString(),
+        timesReviewed: 0,
+        timesCorrect: 0,
+      };
+    });
 
     // Add to user flashcards
     const existing = db.flashcards.get(user.id) || [];
@@ -1136,9 +1365,16 @@ app.post('/api/ai/plan-generate', async (req, res) => {
     return res.status(403).json({ error: subCheck.reason, subscriptionExpired: true });
   }
 
-  const { availableHoursPerDay = 2, targetExamDates, language = 'fr' } = req.body;
-  const userCourses = db.courses.get(user.id) || [];
-  const coursesList = userCourses.map((c) => `- ${c.title} (Progression: ${c.progressPercent}%)`).join('\n');
+  // Study planner generation is an advanced Premium feature
+  const sub = user.subscription;
+  const isFreePlan = sub.tier === 'free_plan' || subCheck.isFreePlan;
+  if (isFreePlan) {
+    return res.status(403).json({
+      error: "Le Générateur de Planning d'Études Intelligent est réservé aux membres Premium. Passez à STUDIA AI Premium (40 MAD/mois) pour débloquer cette fonctionnalité.",
+      premiumRequired: true,
+      feature: 'study_planner',
+    });
+  }
 
   try {
     const prompt = `Tu es le planificateur d'études intelligent de STUDIA AI.
@@ -1657,6 +1893,65 @@ app.get('/api/subscriptions/status', (req, res) => {
       cancellation: 'Sans engagement, annulable à tout moment en 1 clic',
     },
   });
+});
+
+// Real-time access control & usage limits endpoint
+app.get('/api/user/usage', (req, res) => {
+  const user = getAuthUser(req);
+  if (!user) return res.status(401).json({ error: 'Non authentifié.' });
+
+  const sub = user.subscription;
+  const now = Date.now();
+
+  // Automatically migrate expired trial to Free Plan
+  if (sub.tier === 'free_trial' && sub.trialExpiresAt && now > new Date(sub.trialExpiresAt).getTime()) {
+    sub.tier = 'free_plan';
+    sub.isTrialActive = false;
+    sub.status = 'active';
+    sub.planName = 'Plan Gratuit';
+  }
+
+  const isPremium = (sub.tier === 'premium' || sub.tier === 'gold') && sub.status === 'active';
+  const isTrialActive = sub.tier === 'free_trial' && sub.isTrialActive && (sub.trialExpiresAt ? now <= new Date(sub.trialExpiresAt).getTime() : true);
+  const isFree = !isPremium && !isTrialActive;
+
+  let trialHoursRemaining = 0;
+  if (sub.tier === 'free_trial' && sub.trialExpiresAt) {
+    trialHoursRemaining = Math.max(0, Math.ceil((new Date(sub.trialExpiresAt).getTime() - now) / (1000 * 3600)));
+  }
+
+  const usage = getUserUsage(user.id);
+  const aiLimit = isFree ? 5 : (db.adminConfig.aiDailyLimit || 100);
+  const sumLimit = isFree ? 3 : (db.adminConfig.summaryLimit || 50);
+
+  const usageData: UserUsageLimits = {
+    tier: sub.tier,
+    isTrialActive,
+    trialHoursRemaining,
+    isTrialExpired: sub.tier === 'free_trial' && trialHoursRemaining === 0,
+    isPremium,
+    aiQuestions: {
+      usedToday: usage.questionsToday,
+      limit: aiLimit,
+      remainingToday: Math.max(0, aiLimit - usage.questionsToday),
+      resetsAt: 'minuit (00:00)',
+    },
+    summaries: {
+      usedThisMonth: usage.summariesThisMonth,
+      limit: sumLimit,
+      remainingThisMonth: Math.max(0, sumLimit - usage.summariesThisMonth),
+      resetsAt: '1er du mois',
+    },
+    quizzes: {
+      usedToday: usage.quizzesToday,
+      maxQuestionsPerQuiz: isFree ? 5 : 20,
+      isAdvancedAllowed: !isFree,
+    },
+    canGenerateStudyPlan: !isFree,
+    canGenerateExamSimulation: !isFree,
+  };
+
+  return res.json({ usage: usageData, subscription: sub });
 });
 
 // Step 1: Initiate Payzone Payment (40 MAD)

@@ -16,7 +16,9 @@ import {
   Brain,
   Zap,
   FileUp,
-  Upload
+  Upload,
+  FileText,
+  Layers
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useLanguage } from '../../context/LanguageContext.tsx';
@@ -246,31 +248,57 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Quick Action Bar (PDF Upload & Tools) */}
-      <div className="grid grid-cols-2 gap-2.5">
+      {/* Quick Action Bar (PDF Upload & AI Study Tools) */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         <button
           onClick={() => onNavigate('courses', { openPdfModal: true })}
-          className="p-3 bg-gradient-to-br from-rose-50 to-orange-50 hover:from-rose-100 hover:to-orange-100 border border-rose-200/80 rounded-2xl flex items-center gap-3 transition-all text-left shadow-2xs group"
+          className="p-3 bg-gradient-to-br from-rose-50 to-orange-50 hover:from-rose-100 hover:to-orange-100 border border-rose-200/80 rounded-2xl flex items-center gap-2.5 transition-all text-left shadow-2xs group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-            <FileUp className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+            <FileUp className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-black text-rose-950 truncate">Importer un PDF</div>
-            <div className="text-[10px] text-rose-700/80 truncate">Résumé 100% fidèle strict</div>
+            <div className="text-xs font-black text-rose-950 truncate">Importer PDF</div>
+            <div className="text-[10px] text-rose-700/80 truncate">Détection auto</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onNavigate('quiz', { subtab: 'summary' })}
+          className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border border-blue-200/80 rounded-2xl flex items-center gap-2.5 transition-all text-left shadow-2xs group cursor-pointer"
+        >
+          <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+            <FileText className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-black text-blue-950 truncate">Résumés IA</div>
+            <div className="text-[10px] text-blue-700/80 truncate">Fiches académiques</div>
+          </div>
+        </button>
+
+        <button
+          onClick={() => onNavigate('quiz', { subtab: 'flashcards' })}
+          className="p-3 bg-gradient-to-br from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 border border-indigo-200/80 rounded-2xl flex items-center gap-2.5 transition-all text-left shadow-2xs group cursor-pointer"
+        >
+          <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+            <Layers className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-xs font-black text-indigo-950 truncate">Flashcards IA</div>
+            <div className="text-[10px] text-indigo-700/80 truncate">Flip 3D & Leitner</div>
           </div>
         </button>
 
         <button
           onClick={() => onNavigate('assistant')}
-          className="p-3 bg-gradient-to-br from-blue-50 to-indigo-50 hover:from-blue-100 hover:to-indigo-100 border border-blue-200/80 rounded-2xl flex items-center gap-3 transition-all text-left shadow-2xs group"
+          className="p-3 bg-gradient-to-br from-purple-50 to-pink-50 hover:from-purple-100 hover:to-pink-100 border border-purple-200/80 rounded-2xl flex items-center gap-2.5 transition-all text-left shadow-2xs group cursor-pointer"
         >
-          <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
-            <Sparkles className="w-5 h-5" />
+          <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-sm group-hover:scale-105 transition-transform">
+            <Sparkles className="w-4 h-4" />
           </div>
           <div className="min-w-0">
-            <div className="text-xs font-black text-blue-950 truncate">Poser à STUDIA AI</div>
-            <div className="text-[10px] text-blue-700/80 truncate">Tuteur IA 24h/24</div>
+            <div className="text-xs font-black text-purple-950 truncate">Assistant IA</div>
+            <div className="text-[10px] text-purple-700/80 truncate">Tuteur 24h/24</div>
           </div>
         </button>
       </div>
